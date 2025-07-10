@@ -265,6 +265,90 @@ public function getCarPaymentReceipt(Request $request, $car_id)
     ]);
 }
 
+public function getAllReceipts(Request $request)
+{
+    $user = Auth::user();
+    $userIds = [$user->id];
+    if (isset($user->userId)) {
+        $userIds[] = $user->userId;
+    }
+    $carIds = \App\Models\Car::whereIn('user_id', $userIds)->pluck('id');
+    $transactions = \App\Models\Payment::with(['car', 'paymentSchedule.payment_head', 'paymentSchedule.revenue_head', 'paymentSchedule.gateway', 'paymentSchedule.revenue_head.bank'])
+        ->whereIn('car_id', $carIds)
+        ->orderBy('created_at', 'desc')
+        ->get();
+
+    $safeReceipts = $transactions->map(function($payment) {
+        // Only expose safe fields
+        $safe = [
+            'id' => $payment->id,
+            'transaction_id' => $payment->transaction_id,
+            'amount' => $payment->amount,
+            'status' => $payment->status,
+            'payment_description' => $payment->payment_description,
+            'created_at' => $payment->created_at,
+            'car' => [
+                'id' => $payment->car->id ?? null,
+                'name_of_owner' => $payment->car->name_of_owner ?? null,
+                'vehicle_make' => $payment->car->vehicle_make ?? null,
+                'vehicle_model' => $payment->car->vehicle_model ?? null,
+                'registration_no' => $payment->car->registration_no ?? null,
+            ],
+            'payment_schedule' => [
+                'id' => $payment->paymentSchedule->id ?? null,
+                'amount' => $payment->paymentSchedule->amount ?? null,
+                'payment_head' => $payment->paymentSchedule->payment_head->payment_head_name ?? null,
+                'revenue_head' => $payment->paymentSchedule->revenue_head->revenue_head_name ?? null,
+            ],
+            'raw_response' => [
+                'status' => $payment->raw_response['status'] ?? null,
+                'message' => $payment->raw_response['message'] ?? null,
+                'orderid' => $payment->raw_response['orderid'] ?? null,
+                'data' => isset($payment->raw_response['data']) ? [
+                    'amount' => $payment->raw_response['data']['amount'] ?? null,
+                    'date_paid' => $payment->raw_response['data']['date_paid'] ?? null,
+                    'status' => $payment->raw_response['data']['status'] ?? null,
+                    'channel' => $payment->raw_response['data']['channel'] ?? null,
+                ] : null,
+            ],
+        ];
+        return $safe;
+    });
+
+    return response()->json([
+        'status' => true,
+        'receipts' => $safeReceipts
+    ]);
+}
+
+public function deleteReceipt(Request $request, $payment_id)
+{
+    $user = Auth::user();
+    $payment = \App\Models\Payment::find($payment_id);
+    if (!$payment) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Payment not found.'
+        ], 404);
+    }
+    $car = \App\Models\Car::find($payment->car_id);
+    $userIds = [$user->id];
+    if (isset($user->userId)) {
+        $userIds[] = $user->userId;
+    }
+    if (!$car || !in_array($car->user_id, $userIds)) {
+        return response()->json([
+            'status' => false,
+            'message' => 'You do not have permission to delete this receipt.'
+        ], 403);
+    }
+    $payment->delete();
+    return response()->json([
+        'status' => true,
+        'message' => 'Receipt deleted successfully.'
+    ]);
+}
+
 public function getDeliveryFee(Request $request)
 {
     $request->validate([
@@ -310,7 +394,12 @@ public function listAllDeliveryFees()
 public function listUserTransactions(Request $request)
 {
     $user = Auth::user();
-    $transactions = \App\Models\Payment::where('user_id', $user->id)
+    $userIds = [$user->id];
+    if (isset($user->userId)) {
+        $userIds[] = $user->userId;
+    }
+    $carIds = \App\Models\Car::whereIn('user_id', $userIds)->pluck('id');
+    $transactions = \App\Models\Payment::whereIn('car_id', $carIds)
         ->orderBy('created_at', 'desc')
         ->get();
 
@@ -319,6 +408,8 @@ public function listUserTransactions(Request $request)
         'transactions' => $transactions
     ]);
 }
+
+
 
 
   

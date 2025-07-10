@@ -92,6 +92,9 @@ Route::controller(AuthController::class)->group(function () {
             Route::post('/verify-payment/{transaction_id}', [PaymentController::class, 'verifyPayment']);
             Route::get('/car-receipt/{car_id}', [PaymentController::class, 'getCarPaymentReceipt']);
             Route::get('/wallet', [PaymentController::class, 'getWalletInfo']);
+            Route::delete('/receipt/{payment_id}', [PaymentController::class, 'deleteReceipt']);
+            Route::get('/transactions', [PaymentController::class, 'listUserTransactions']);
+            Route::get('/all-receipts', [PaymentController::class, 'getAllReceipts']);
         });
       
 
@@ -117,7 +120,7 @@ Route::controller(AuthController::class)->group(function () {
 
         // Delivery fee lookup endpoint (public)
         Route::get('/delivery-fee', [PaymentController::class, 'getDeliveryFee']);
-        Route::get('/payment/transactions', [PaymentController::class, 'listUserTransactions']);
+       
     });
 
     // Social authentication routes

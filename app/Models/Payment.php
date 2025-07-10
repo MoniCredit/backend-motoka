@@ -11,4 +11,14 @@ class Payment extends Model
     protected $casts = [
         'raw_response' => 'array',
     ];
+
+    public function car()
+    {
+        return $this->belongsTo(Car::class, 'car_id');
+    }
+
+    public function paymentSchedule()
+    {
+        return $this->belongsTo(PaymentSchedule::class, 'payment_schedule_id');
+    }
 }
