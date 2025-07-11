@@ -40,6 +40,7 @@ class AuthController extends Controller
             'email' => 'required_without:phone_number|string|email|max:255|unique:users,email',
             'phone_number' => 'required|string|unique:users,phone_number', // always required
             'password' => 'required|string|min:6|confirmed',
+            'nin' => 'nullable|string',
         ]);
 
         // Custom message for either email or phone required
@@ -64,6 +65,7 @@ class AuthController extends Controller
             'email' => $request->email,
             'phone_number' => $request->phone_number,
             'password' => Hash::make($request->password),
+            'nin' => $request->nin, // Save NIN if provided
         ]);
 
         if ($user->save()) {
@@ -79,8 +81,10 @@ class AuthController extends Controller
                     'last_name' => $lastName,
                     'phone' => $request->phone_number,
                     'email' => $request->email,
-                    'nin' => '93819653613',
                 ];
+                if (!empty($request->nin)) {
+                    $walletPayload['nin'] = $request->nin;
+                }
                 $privateKey = env('MONICREDIT_PRIVATE_KEY');
                 $headers = [
                     'Authorization' => 'Bearer ' . $privateKey,

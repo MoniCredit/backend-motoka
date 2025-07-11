@@ -76,14 +76,25 @@ class CarController extends Controller
 
 
 
-        if ($request->registration_status === 'registered') {
-            $exists = Car::where('user_id', $userId)
-                ->where(function($q) use ($request) {
-                    $q->where('registration_no', $request->registration_no)
-                      ->orWhere('chasis_no', $request->chasis_no)
-                      ->orWhere('engine_no', $request->engine_no);
-                })->exists();
-            if ($exists) {
+        // Improved duplicate check for registration_no, chasis_no, engine_no
+        $duplicateQuery = Car::where('user_id', $userId);
+        $orConditions = [];
+        if (!empty($request->registration_no)) {
+            $orConditions[] = ['registration_no', '=', $request->registration_no];
+        }
+        if (!empty($request->chasis_no)) {
+            $orConditions[] = ['chasis_no', '=', $request->chasis_no];
+        }
+        if (!empty($request->engine_no)) {
+            $orConditions[] = ['engine_no', '=', $request->engine_no];
+        }
+        if (!empty($orConditions)) {
+            $duplicateQuery->where(function($query) use ($orConditions) {
+                foreach ($orConditions as $condition) {
+                    $query->orWhere($condition[0], $condition[1], $condition[2]);
+                }
+            });
+            if ($duplicateQuery->exists()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'A car with the same details already exists.',
@@ -209,6 +220,13 @@ class CarController extends Controller
                 'message' => 'Car not found'
             ], 404);
         }
+        $userId = Auth::user()->userId;
+        if ($car->user_id !== $userId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to access this car.'
+            ], 403);
+        }
         return response()->json([
             'status' => 'success',
             'car' => $car
@@ -228,6 +246,12 @@ class CarController extends Controller
             ], 404);
         }
         $userId = Auth::user()->userId;
+        if ($car->user_id !== $userId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to update this car.'
+            ], 403);
+        }
 
         $validator = Validator::make($request->all(), [
             'name_of_owner' => 'nullable|string',
@@ -244,7 +268,6 @@ class CarController extends Controller
             'date_issued' => 'nullable|date',
             'expiry_date' => 'nullable|date|after:date_issued',
             'document_images.*' => 'nullable |image|mimes:jpeg,png,jpg|max:2048',
-            
         ]);
 
         if ($validator->fails()) {
@@ -267,9 +290,10 @@ class CarController extends Controller
             $car->document_images = $documentImages;
         }
 
-        $car->update($request->all());
+        // Prevent manual update of date_issued and expiry_date
+        $requestData = $request->except(['date_issued', 'expiry_date']);
+        $car->update($requestData);
 
-       
         if ($car->registration_status === 'registered' && $car->expiry_date) {
             $this->handleReminder($userId, $car->expiry_date, 'car', $car->id);
         } else {
@@ -299,32 +323,30 @@ class CarController extends Controller
     public function destroy($id)
     {
         $userId = Auth::user()->userId;
-    
-        // Attempt to find the car
-        $car = Car::where('user_id', $userId)->find($id);
-    
+        $car = Car::find($id);
         if (!$car) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Car not found.'
             ], 404);
         }
-    
+        if ($car->user_id !== $userId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to delete this car.'
+            ], 403);
+        }
         // Delete associated documents
         if (!empty($car->document_images)) {
             foreach ($car->document_images as $path) {
                 Storage::disk('public')->delete($path);
             }
         }
-    
-        // Delete the car
         $car->delete();
-    
         // Delete associated reminders
         Reminder::where('user_id', $userId)
             ->where('ref_id', $id) // Assuming ref_id is the car ID
             ->delete();
-    
         // Optional: record a notification
         Notification::create([
             'user_id' => $userId,
@@ -332,7 +354,6 @@ class CarController extends Controller
             'action' => 'deleted',
             'message' => 'Your car has been deleted successfully.',
         ]);
-    
         return response()->json([
             'status' => 'success',
             'message' => 'Car and associated reminders deleted successfully.'
