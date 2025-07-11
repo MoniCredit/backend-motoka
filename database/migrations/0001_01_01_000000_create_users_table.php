@@ -32,6 +32,7 @@ return new class extends Migration
             $table->string('image')->nullable();
             $table->string('password');
             $table->string('phone_number')->nullable()->unique();
+            $table->string('nin')->nullable();
             $table->string('social_id')->nullable();
             $table->string('social_type')->nullable();
             $table->string('social_avatar')->nullable();

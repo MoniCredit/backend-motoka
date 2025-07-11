@@ -37,35 +37,37 @@ class ReminderController extends Controller
         $response = [];
         foreach ($reminders as $reminder) {
             $carId = $reminder->ref_id;
-            
             // Get car details for this reminder
             $car = Car::where('id', $carId)
                 ->where('user_id', $userId)
                 ->first();
 
             if ($car) {
-                $response[] = [
-                    'reminder_id' => $reminder->id,
-                    'car_id' => $carId,
-                    'car_details' => [
-                        'name_of_owner' => $car->name_of_owner,
-                        'vehicle_make' => $car->vehicle_make,
-                        'vehicle_model' => $car->vehicle_model,
-                        'registration_no' => $car->registration_no,
-                        'expiry_date' => $car->expiry_date,
-                        'vehicle_color' => $car->vehicle_color,
-                    ],
-                    'reminder' => [
-                        'id' => $reminder->id,
-                        'user_id' => $reminder->user_id,
-                        'type' => $reminder->type,
-                        'message' => $reminder->message,
-                        'remind_at' => $reminder->remind_at,
-                        'is_sent' => $reminder->is_sent,
-                        'created_at' => $reminder->created_at,
-                        'updated_at' => $reminder->updated_at,
-                    ],
-                ];
+                $daysLeft = \Carbon\Carbon::now()->diffInDays(\Carbon\Carbon::parse($car->expiry_date), false);
+                if ($daysLeft <= 30) { // Only show reminders for cars expiring in 30 days or less
+                    $response[] = [
+                        'reminder_id' => $reminder->id,
+                        'car_id' => $carId,
+                        'car_details' => [
+                            'name_of_owner' => $car->name_of_owner,
+                            'vehicle_make' => $car->vehicle_make,
+                            'vehicle_model' => $car->vehicle_model,
+                            'registration_no' => $car->registration_no,
+                            'expiry_date' => $car->expiry_date,
+                            'vehicle_color' => $car->vehicle_color,
+                        ],
+                        'reminder' => [
+                            'id' => $reminder->id,
+                            'user_id' => $reminder->user_id,
+                            'type' => $reminder->type,
+                            'message' => $reminder->message,
+                            'remind_at' => $reminder->remind_at,
+                            'is_sent' => $reminder->is_sent,
+                            'created_at' => $reminder->created_at,
+                            'updated_at' => $reminder->updated_at,
+                        ],
+                    ];
+                }
             }
         }
 

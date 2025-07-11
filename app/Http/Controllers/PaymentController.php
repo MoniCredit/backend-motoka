@@ -87,7 +87,6 @@ class PaymentController extends Controller
             'last_name' => $lastName,
             'email' => $user->email,
             'phone' => $user->phone_number,
-            'nin' => $user->nin ?? '96380283356',
         ],
         'fee_bearer' => 'merchant', // Merchant pays Monicredit charges
         'items' => $items,
@@ -96,6 +95,9 @@ class PaymentController extends Controller
         'total_amount' => $totalAmount,
         'meta_data' => $metaData,
     ];
+    if (!empty($user->nin)) {
+        $payload['customer']['nin'] = $user->nin;
+    }
 
     $response = Http::post(env('MONICREDIT_BASE_URL') . '/payment/transactions/init-transaction', $payload);
     $data = $response->json();
@@ -173,6 +175,79 @@ public function verifyPayment($transaction_id)
             'status' => strtolower($data['data']['status']),
             'raw_response' => $data
         ]);
+
+        // If payment is successful and for a car, update car expiry and reminder
+        if (strtolower($data['data']['status']) === 'approved' || strtolower($data['data']['status']) === 'success') {
+            $car = \App\Models\Car::find($payment->car_id);
+            if ($car) {
+                // Set new date_issued to current expiry_date or now if already expired
+                $now = now();
+                $oldExpiry = $car->expiry_date ? \Carbon\Carbon::parse($car->expiry_date) : $now;
+                $newIssued = $oldExpiry->greaterThan($now) ? $oldExpiry : $now;
+                $car->date_issued = $newIssued;
+                $car->expiry_date = $newIssued->copy()->addYear();
+                $car->save();
+
+                // Get the userId string from the user model
+                $userModel = \App\Models\User::find($payment->user_id);
+                $userIdString = $userModel ? $userModel->userId : null;
+
+                if ($userIdString) {
+                    $reminderDate = \Carbon\Carbon::parse($car->expiry_date)->startOfDay();
+                    $now = \Carbon\Carbon::now()->startOfDay();
+                    $daysLeft = $now->diffInDays($reminderDate, false);
+
+                    if ($daysLeft > 30) {
+                        \App\Models\Reminder::where('user_id', $userIdString)
+                            ->where('type', 'car')
+                            ->where('ref_id', $car->id)
+                            ->delete();
+                    } else if ($daysLeft < 0) {
+                        $message = 'License Expired.';
+                        \App\Models\Reminder::updateOrCreate(
+                            [
+                                'user_id' => $userIdString,
+                                'type' => 'car',
+                                'ref_id' => $car->id,
+                            ],
+                            [
+                                'message' => $message,
+                                'remind_at' => $now->format('Y-m-d H:i:s'),
+                                'is_sent' => false
+                            ]
+                        );
+                    } else if ($daysLeft === 0) {
+                        $message = 'Your car registration expires today! Please renew now.';
+                        \App\Models\Reminder::updateOrCreate(
+                            [
+                                'user_id' => $userIdString,
+                                'type' => 'car',
+                                'ref_id' => $car->id,
+                            ],
+                            [
+                                'message' => $message,
+                                'remind_at' => $now->format('Y-m-d H:i:s'),
+                                'is_sent' => false
+                            ]
+                        );
+                    } else {
+                        $message = "Expires in {$daysLeft} day" . ($daysLeft > 1 ? 's' : '') . ".";
+                        \App\Models\Reminder::updateOrCreate(
+                            [
+                                'user_id' => $userIdString,
+                                'type' => 'car',
+                                'ref_id' => $car->id,
+                            ],
+                            [
+                                'message' => $message,
+                                'remind_at' => $now->format('Y-m-d H:i:s'),
+                                'is_sent' => false
+                            ]
+                        );
+                    }
+                }
+            }
+        }
 
         return response()->json([
             'message' => 'Payment verified successfully',
