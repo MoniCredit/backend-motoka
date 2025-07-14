@@ -22,6 +22,7 @@ return new class extends Migration
             $table->string('vehicle_make');
             $table->string('vehicle_model');
             $table->enum('registration_status', ['registered', 'unregistered'])->default('unregistered');
+            $table->enum('car_type', ['private', 'commercial'])->default('private');
             $table->string('chasis_no')->nullable();
             $table->string('engine_no')->nullable();
             $table->string('vehicle_year')->nullable();
@@ -30,7 +31,7 @@ return new class extends Migration
             $table->date('date_issued')->nullable();
             $table->date('expiry_date')->nullable();
             $table->json('document_images')->nullable();
-            $table->enum('status', ['active', 'pending', 'rejected'])->default('pending');
+            $table->enum('status', ['active', 'pending', 'rejected', 'unpaid'])->default('pending');
             $table->timestamps();
             $table->softDeletes();
         });

@@ -32,6 +32,24 @@ class PaymentController extends Controller
         return response()->json(['message' => 'Payment schedule is missing payment head or revenue head'], 400);
     }
 
+    // --- Car type/payment schedule validation ---
+    // Define allowed payment_schedule_ids for each car_type
+    $privateScheduleIds = [1, 2, 3, 4]; // Update with your actual IDs for private
+    $commercialScheduleIds = [1, 2, 3, 4, 5]; // Update with your actual IDs for commercial
+    if ($car->car_type === 'private' && !in_array($request->payment_schedule_id, $privateScheduleIds)) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Invalid payment_schedule_id for private car type.'
+        ], 400);
+    }
+    if ($car->car_type === 'commercial' && !in_array($request->payment_schedule_id, $commercialScheduleIds)) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Invalid payment_schedule_id for commercial car type.'
+        ], 400);
+    }
+    // --- End car type/payment schedule validation ---
+
     // Access control: Only allow payment for cars owned by the user
     if ($car->user_id !== $user->id && $car->user_id !== $user->userId) {
         return response()->json([
@@ -180,12 +198,11 @@ public function verifyPayment($transaction_id)
         if (strtolower($data['data']['status']) === 'approved' || strtolower($data['data']['status']) === 'success') {
             $car = \App\Models\Car::find($payment->car_id);
             if ($car) {
-                // Set new date_issued to current expiry_date or now if already expired
+                // Always set new date_issued and expiry_date on payment success (for both new and renewal)
                 $now = now();
-                $oldExpiry = $car->expiry_date ? \Carbon\Carbon::parse($car->expiry_date) : $now;
-                $newIssued = $oldExpiry->greaterThan($now) ? $oldExpiry : $now;
-                $car->date_issued = $newIssued;
-                $car->expiry_date = $newIssued->copy()->addYear();
+                $car->date_issued = $now;
+                $car->expiry_date = $now->copy()->addYear();
+                $car->status = 'active';
                 $car->save();
 
                 // Get the userId string from the user model
@@ -194,8 +211,8 @@ public function verifyPayment($transaction_id)
 
                 if ($userIdString) {
                     $reminderDate = \Carbon\Carbon::parse($car->expiry_date)->startOfDay();
-                    $now = \Carbon\Carbon::now()->startOfDay();
-                    $daysLeft = $now->diffInDays($reminderDate, false);
+                    $nowDay = \Carbon\Carbon::now()->startOfDay();
+                    $daysLeft = $nowDay->diffInDays($reminderDate, false);
 
                     if ($daysLeft > 30) {
                         \App\Models\Reminder::where('user_id', $userIdString)
@@ -212,7 +229,7 @@ public function verifyPayment($transaction_id)
                             ],
                             [
                                 'message' => $message,
-                                'remind_at' => $now->format('Y-m-d H:i:s'),
+                                'remind_at' => $nowDay->format('Y-m-d H:i:s'),
                                 'is_sent' => false
                             ]
                         );
@@ -226,21 +243,7 @@ public function verifyPayment($transaction_id)
                             ],
                             [
                                 'message' => $message,
-                                'remind_at' => $now->format('Y-m-d H:i:s'),
-                                'is_sent' => false
-                            ]
-                        );
-                    } else {
-                        $message = "Expires in {$daysLeft} day" . ($daysLeft > 1 ? 's' : '') . ".";
-                        \App\Models\Reminder::updateOrCreate(
-                            [
-                                'user_id' => $userIdString,
-                                'type' => 'car',
-                                'ref_id' => $car->id,
-                            ],
-                            [
-                                'message' => $message,
-                                'remind_at' => $now->format('Y-m-d H:i:s'),
+                                'remind_at' => $nowDay->format('Y-m-d H:i:s'),
                                 'is_sent' => false
                             ]
                         );

@@ -67,9 +67,15 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('user_types');
-        Schema::dropIfExists('users');
-        Schema::dropIfExists('password_reset_tokens');
+        Schema::dropIfExists('notifications');
+        Schema::dropIfExists('reminders');
+        Schema::dropIfExists('drivers_licenses');
+        Schema::dropIfExists('plates');
+        Schema::dropIfExists('transactions');
+        Schema::dropIfExists('cars');
         Schema::dropIfExists('sessions');
+        Schema::dropIfExists('users');
+        Schema::dropIfExists('user_types');
+        Schema::dropIfExists('password_reset_tokens');
     }
 };
