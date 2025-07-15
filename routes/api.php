@@ -120,6 +120,23 @@ Route::controller(AuthController::class)->group(function () {
 
         // Delivery fee lookup endpoint (public)
         Route::get('/delivery-fee', [PaymentController::class, 'getDeliveryFee']);
+
+
+        // Driver license payment endpoints
+        Route::get('/driver-license/payment-options', [\App\Http\Controllers\DriverLicenseController::class, 'getDriverLicensePaymentOptions']);
+        Route::post('/driver-license/initialize-payment', [\App\Http\Controllers\DriverLicenseController::class, 'initializePayment']);
+
+        // Driver license CRUD and payment endpoints
+        Route::post('/driver-license', [\App\Http\Controllers\DriverLicenseController::class, 'store']);
+        Route::get('/driver-license', [\App\Http\Controllers\DriverLicenseController::class, 'index']);
+        Route::post('/driver-license/{id}/initialize-payment', [\App\Http\Controllers\DriverLicenseController::class, 'initializePaymentForLicense']);
+        Route::post('/driver-license/{id}/verify-payment', [\App\Http\Controllers\DriverLicenseController::class, 'verifyPaymentForLicense']);
+        Route::get('/driver-license/{id}/receipt', [\App\Http\Controllers\DriverLicenseController::class, 'getDriverLicenseReceipt']);
+        Route::put('/driver-license/{id}', [\App\Http\Controllers\DriverLicenseController::class, 'update']);
+        Route::delete('/driver-license/{id}', [\App\Http\Controllers\DriverLicenseController::class, 'destroy']);
+
+
+        Route::get('/driver-license/receipts', [\App\Http\Controllers\DriverLicenseController::class, 'listAllDriverLicenseReceipts']);
        
     });
 
