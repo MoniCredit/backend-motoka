@@ -11,8 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Schema::table('users', function (Blueprint $table) {
-        //     $table->string('nin')->nullable()->after('phone_number');
+        // Schema::table('cars', function (Blueprint $table) {
+        //     $table->enum('car_type', ['private', 'commercial'])->default('private')->after('registration_status');
         // });
     }
 
@@ -21,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Schema::table('users', function (Blueprint $table) {
-        //     $table->dropColumn('nin');
+        // Schema::table('cars', function (Blueprint $table) {
+        //     $table->dropColumn('car_type');
         // });
     }
 };

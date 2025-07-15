@@ -18,6 +18,7 @@ class PaymentHeadSeeder extends Seeder
             ['id' => 2, 'payment_head_name' => "Vehicle License",'status' => "active", 'created_at' => now()],
             ['id' => 3, 'payment_head_name' => "Proof Of Ownership",'status' => "active", 'created_at' => now()],
             ['id' => 4, 'payment_head_name' => "Road Wortiness",'status' => "active", 'created_at' => now()],
+            ['id' => 5, 'payment_head_name' => "Hackney Permit",'status' => "active", 'created_at' => now()],
         );
 
         foreach ($user_types as $type) {

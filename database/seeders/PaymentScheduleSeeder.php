@@ -41,6 +41,13 @@ class PaymentScheduleSeeder extends Seeder
                 'revenue_head_id' => 1,
                 'amount' => 400,
             ],
+            [
+                'id' => 5,
+                'payment_head_id' => 5, // Hackney Permit
+                'gateway_id' => 1,
+                'revenue_head_id' => 1,
+                'amount' => 500,
+            ],
         ];
 
         foreach ($schedules as $schedule) {

@@ -29,6 +29,7 @@ return new class extends Migration {
             $table->string("mother_maiden_name")->nullable();
             $table->integer('license_year')->nullable(); // e.g., 5 years
             $table->string('passport_photo')->nullable();
+            $table->enum('status', ['unpaid', 'active', 'pending', 'rejected'])->default('unpaid');
             $table->timestamps();
         });
     }

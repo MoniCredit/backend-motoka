@@ -11,9 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Schema::table('users', function (Blueprint $table) {
-        //     $table->string('nin')->nullable()->after('phone_number');
-        // });
+        Schema::table('driver_license_payments', function (Blueprint $table) {
+            $table->string('revenue_head_code')->nullable();
+        });
     }
 
     /**
@@ -21,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Schema::table('users', function (Blueprint $table) {
-        //     $table->dropColumn('nin');
-        // });
+        Schema::table('driver_license_payments', function (Blueprint $table) {
+            $table->dropColumn('revenue_head_code');
+        });
     }
 };

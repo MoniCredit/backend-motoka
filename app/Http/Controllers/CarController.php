@@ -39,6 +39,7 @@ class CarController extends Controller
             'vehicle_make' => 'required|string|max:255',
             'vehicle_model' => 'required|string|max:255',
             'registration_status' => 'required|in:registered,unregistered',
+            'car_type' => 'required|in:private,commercial',
             'chasis_no' => 'nullable|string',
             'engine_no' => 'nullable|string',
             'vehicle_year' => 'required|integer|digits:4|min:1900|max:' . (date('Y') + 1),
@@ -48,8 +49,8 @@ class CarController extends Controller
         // Additional rules for registered cars
         $registeredRules = [
             'registration_no' => 'required|string',
-            'date_issued' => 'required|date',
-            'expiry_date' => 'required|date|after:date_issued',
+            // 'date_issued' => 'required|date',
+            // 'expiry_date' => 'required|date|after:date_issued',
             'document_images.*' => 'required |image|mimes:jpeg,png,jpg|max:2048',
         ];
 
@@ -121,34 +122,32 @@ class CarController extends Controller
                 'vehicle_make' => $request->vehicle_make,
                 'vehicle_model' => $request->vehicle_model,
                 'registration_status' => $request->registration_status,
+                'car_type' => $request->car_type,
                 'chasis_no' => $request->chasis_no,
                 'engine_no' => $request->engine_no,
                 'vehicle_year' => $request->vehicle_year,
                 'vehicle_color' => $request->vehicle_color,
-                'status' => $request->registration_status === 'registered' ? 'active' : 'pending'
+                'status' => 'unpaid', // Always set to unpaid on registration
             ];
 
             // Add registered car specific fields
             if ($request->registration_status === 'registered') {
                 $carData = array_merge($carData, [
                     'registration_no' => $request->registration_no,
-                    'date_issued' => $request->date_issued,
-                    'expiry_date' => $request->expiry_date,
+                    // 'date_issued' => $request->date_issued, // removed
+                    // 'expiry_date' => $request->expiry_date, // removed
                     'document_images' => $documentImages,
                 ]);
             }
 
             $car = Car::create($carData);
 
-           
-           
-           
-            
-            if ($request->registration_status === 'registered' && $request->expiry_date) {
-                $this->handleReminder($userId, $request->expiry_date, 'car', $car->id);
-            } else {
-                $this->deleteReminder($userId, 'car', $car->id);
-            }
+            // Do not set reminders here, as dates are not set yet
+            // if ($request->registration_status === 'registered' && $request->expiry_date) {
+            //     $this->handleReminder($userId, $request->expiry_date, 'car', $car->id);
+            // } else {
+            //     $this->deleteReminder($userId, 'car', $car->id);
+            // }
 
            
             Notification::create([
@@ -290,8 +289,8 @@ class CarController extends Controller
             $car->document_images = $documentImages;
         }
 
-        // Prevent manual update of date_issued and expiry_date
-        $requestData = $request->except(['date_issued', 'expiry_date']);
+        // Prevent manual update of status, date_issued and expiry_date
+        $requestData = $request->except(['status', 'date_issued', 'expiry_date']);
         $car->update($requestData);
 
         if ($car->registration_status === 'registered' && $car->expiry_date) {

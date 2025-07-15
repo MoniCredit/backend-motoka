@@ -44,8 +44,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::dropIfExists('delivery_fees');
+        Schema::dropIfExists('lgas');
         Schema::dropIfExists('state_lgas');
-        Schema::dropIfExists('geo_political_zones');
         Schema::dropIfExists('states');
+        Schema::dropIfExists('geo_political_zones');
     }
 };
