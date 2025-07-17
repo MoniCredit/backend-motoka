@@ -49,8 +49,8 @@ class CarController extends Controller
         // Additional rules for registered cars
         $registeredRules = [
             'registration_no' => 'required|string',
-            // 'date_issued' => 'required|date',
-            // 'expiry_date' => 'required|date|after:date_issued',
+            'date_issued' => 'required|date',
+            'expiry_date' => 'required|date|after:date_issued',
             'document_images.*' => 'required |image|mimes:jpeg,png,jpg|max:2048',
         ];
 
@@ -134,8 +134,8 @@ class CarController extends Controller
             if ($request->registration_status === 'registered') {
                 $carData = array_merge($carData, [
                     'registration_no' => $request->registration_no,
-                    // 'date_issued' => $request->date_issued, // removed
-                    // 'expiry_date' => $request->expiry_date, // removed
+                    'date_issued' => $request->date_issued,
+                    'expiry_date' => $request->expiry_date,
                     'document_images' => $documentImages,
                 ]);
             }
@@ -289,8 +289,8 @@ class CarController extends Controller
             $car->document_images = $documentImages;
         }
 
-        // Prevent manual update of status, date_issued and expiry_date
-        $requestData = $request->except(['status', 'date_issued', 'expiry_date']);
+        // Allow updating date_issued and expiry_date
+        $requestData = $request->except(['status']);
         $car->update($requestData);
 
         if ($car->registration_status === 'registered' && $car->expiry_date) {
