@@ -54,10 +54,23 @@ class CarController extends Controller
             'document_images.*' => 'required |image|mimes:jpeg,png,jpg|max:2048',
         ];
 
+        // Plate fields for unregistered cars
+        $unregisteredPlateRules = [
+            'plate_number' => 'nullable|string|unique:cars,plate_number',
+            'type' => 'nullable|in:Normal,Customized,Dealership',
+            'preferred_name' => 'nullable|string',
+            'business_type' => 'nullable|in:Co-operate,Business',
+            'cac_document' => 'nullable|file|mimes:pdf,jpg,png',
+            'letterhead' => 'nullable|file|mimes:pdf,jpg,png',
+            'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png',
+        ];
         // Apply validation rules based on registration status
-        $rules = $baseRules;
         if ($request->registration_status === 'registered') {
             $rules = array_merge($baseRules, $registeredRules);
+        } elseif ($request->registration_status === 'unregistered') {
+            $rules = array_merge($baseRules, $unregisteredPlateRules);
+        } else {
+            $rules = $baseRules;
         }
 
         $validator = Validator::make($request->all(), $rules);
@@ -140,6 +153,26 @@ class CarController extends Controller
                 ]);
             }
 
+            // Add plate fields for unregistered cars
+            if ($request->registration_status === 'unregistered') {
+                $carData = array_merge($carData, [
+                    'plate_number' => $request->plate_number,
+                    'type' => $request->type,
+                    'preferred_name' => $request->preferred_name,
+                    'business_type' => $request->business_type,
+                ]);
+                // Handle file uploads for plate fields
+                if ($request->hasFile('cac_document')) {
+                    $carData['cac_document'] = $request->file('cac_document')->store('car-documents', 'public');
+                }
+                if ($request->hasFile('letterhead')) {
+                    $carData['letterhead'] = $request->file('letterhead')->store('car-documents', 'public');
+                }
+                if ($request->hasFile('means_of_identification')) {
+                    $carData['means_of_identification'] = $request->file('means_of_identification')->store('car-documents', 'public');
+                }
+            }
+
             $car = Car::create($carData);
 
             // Do not set reminders here, as dates are not set yet
@@ -175,7 +208,7 @@ class CarController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Car registered successfully',
-                'car' => $car,
+                'car' => $this->filterCarResponse($car),
             ]);
         } catch (\Exception $e) {
            
@@ -203,7 +236,7 @@ class CarController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'cars' => $cars
+            'cars' => $cars->map(fn($car) => $this->filterCarResponse($car)),
         ]);
     }
 
@@ -228,7 +261,7 @@ class CarController extends Controller
         }
         return response()->json([
             'status' => 'success',
-            'car' => $car
+            'car' => $this->filterCarResponse($car)
         ]);
     }
 
@@ -561,4 +594,59 @@ public function getLgaByState($state_id)
         'data' =>  $lgas
     ], 200);
 }
+
+    // Add a new method to add plate info to an existing unregistered car
+    public function addPlateToUnregisteredCar(Request $request, $car_id)
+    {
+        $userId = Auth::user()->userId;
+        $car = Car::where('id', $car_id)->where('user_id', $userId)->where('registration_status', 'unregistered')->first();
+        if (!$car) {
+            return response()->json(['status' => 'error', 'message' => 'Unregistered car not found'], 404);
+        }
+        $rules = [
+            'plate_number' => 'required|string|unique:cars,plate_number,' . $car->id,
+            'type' => 'required|in:Normal,Customized,Dealership',
+            'preferred_name' => 'nullable|string',
+            'business_type' => 'nullable|in:Co-operate,Business',
+            'cac_document' => 'nullable|file|mimes:pdf,jpg,png',
+            'letterhead' => 'nullable|file|mimes:pdf,jpg,png',
+            'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png',
+        ];
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+        $updateData = [
+            'plate_number' => $request->plate_number,
+            'type' => $request->type,
+            'preferred_name' => $request->preferred_name,
+            'business_type' => $request->business_type,
+        ];
+        if ($request->hasFile('cac_document')) {
+            $updateData['cac_document'] = $request->file('cac_document')->store('car-documents', 'public');
+        }
+        if ($request->hasFile('letterhead')) {
+            $updateData['letterhead'] = $request->file('letterhead')->store('car-documents', 'public');
+        }
+        if ($request->hasFile('means_of_identification')) {
+            $updateData['means_of_identification'] = $request->file('means_of_identification')->store('car-documents', 'public');
+        }
+        $car->update($updateData);
+        return response()->json(['status' => 'success', 'message' => 'Plate info added to car', 'car' => $car]);
+    }
+
+    private function filterCarResponse($car) {
+        $data = $car->toArray();
+        $plateFields = [
+            'plate_number', 'type', 'preferred_name', 'business_type', 'cac_document', 'letterhead',
+            'means_of_identification', 'state_of_origin', 'local_government', 'blood_group', 'height',
+            'occupation', 'next_of_kin', 'next_of_kin_phone', 'mother_maiden_name', 'license_years'
+        ];
+        if ($car->registration_status === 'registered') {
+            foreach ($plateFields as $field) {
+                unset($data[$field]);
+            }
+        }
+        return $data;
+    }
 }
