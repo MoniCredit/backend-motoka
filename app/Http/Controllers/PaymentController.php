@@ -198,10 +198,12 @@ public function verifyPayment($transaction_id)
         if (strtolower($data['data']['status']) === 'approved' || strtolower($data['data']['status']) === 'success') {
             $car = \App\Models\Car::find($payment->car_id);
             if ($car) {
-                // Always set new date_issued and expiry_date on payment success (for both new and renewal)
-                $now = now();
-                $car->date_issued = $now;
-                $car->expiry_date = $now->copy()->addYear();
+                // Remove auto-setting of date_issued and expiry_date
+                // $now = now();
+                // $oldExpiry = $car->expiry_date ? \Carbon\Carbon::parse($car->expiry_date) : $now;
+                // $newIssued = $oldExpiry->greaterThan($now) ? $oldExpiry : $now;
+                // $car->date_issued = $newIssued;
+                // $car->expiry_date = $newIssued->copy()->addYear();
                 $car->status = 'active';
                 $car->save();
 
@@ -254,7 +256,10 @@ public function verifyPayment($transaction_id)
 
         return response()->json([
             'message' => 'Payment verified successfully',
-            'data' => $data
+            'data' => $data,
+            'payment_date' => $payment->created_at,
+            'car' => $car,
+            'payment' => $payment
         ]);
     }
 
@@ -371,6 +376,7 @@ public function getAllReceipts(Request $request)
                 'vehicle_make' => $payment->car->vehicle_make ?? null,
                 'vehicle_model' => $payment->car->vehicle_model ?? null,
                 'registration_no' => $payment->car->registration_no ?? null,
+                'payment_date' => $payment->created_at,
             ],
             'payment_schedule' => [
                 'id' => $payment->paymentSchedule->id ?? null,
