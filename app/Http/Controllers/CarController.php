@@ -51,7 +51,7 @@ class CarController extends Controller
             'registration_no' => 'required|string',
             'date_issued' => 'required|date',
             'expiry_date' => 'required|date|after:date_issued',
-            'document_images.*' => 'required |image|mimes:jpeg,png,jpg|max:2048',
+            'document_images.*' => 'required|file|mimes:jpeg,png,jpg,pdf|max:2048',
         ];
 
         // Plate fields for unregistered cars
