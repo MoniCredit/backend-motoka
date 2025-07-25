@@ -67,15 +67,17 @@ class DriverLicenseController extends Controller
                 'local_government', 'blood_group', 'height', 'occupation', 'next_of_kin', 'next_of_kin_phone',
                 'mother_maiden_name', 'license_year',
             ]));
-            // Handle passport photograph upload
+            // Handle passport photograph upload to public/images/driver-passports
             if ($request->hasFile('passport_photograph')) {
-                $passportPath = $request->file('passport_photograph')->store('driver-passports', 'public');
-                $data['passport_photograph'] = $passportPath;
+                $filename = time() . '_' . uniqid() . '.' . $request->file('passport_photograph')->getClientOriginalExtension();
+                $request->file('passport_photograph')->move(public_path('images/driver-passports'), $filename);
+                $data['passport_photograph'] = 'images/driver-passports/' . $filename;
             }
         } elseif ($type === 'renew') {
             if ($request->hasFile('expired_license_upload')) {
-                $path = $request->file('expired_license_upload')->store('expired-licenses', 'public');
-                $data['expired_license_upload'] = $path;
+                $filename = time() . '_' . uniqid() . '.' . $request->file('expired_license_upload')->getClientOriginalExtension();
+                $request->file('expired_license_upload')->move(public_path('images/expired-licenses'), $filename);
+                $data['expired_license_upload'] = 'images/expired-licenses/' . $filename;
             }
             $data['full_name'] = $request->full_name;
             $data['date_of_birth'] = $request->date_of_birth;

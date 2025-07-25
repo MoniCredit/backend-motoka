@@ -116,12 +116,13 @@ class CarController extends Controller
             }
         }
         
-        // Handle document images upload
+        // Handle document images upload to public/images/car-documents
         $documentImages = [];
         if ($request->hasFile('document_images')) {
             foreach ($request->file('document_images') as $image) {
-                $path = $image->store('car-documents', 'public');
-                $documentImages[] = $path;
+                $filename = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
+                $image->move(public_path('images/car-documents'), $filename);
+                $documentImages[] = 'images/car-documents/' . $filename;
             }
         }
 
@@ -163,13 +164,19 @@ class CarController extends Controller
                 ]);
                 // Handle file uploads for plate fields
                 if ($request->hasFile('cac_document')) {
-                    $carData['cac_document'] = $request->file('cac_document')->store('car-documents', 'public');
+                    $filename = time() . '_' . uniqid() . '.' . $request->file('cac_document')->getClientOriginalExtension();
+                    $request->file('cac_document')->move(public_path('images/car-documents'), $filename);
+                    $carData['cac_document'] = 'images/car-documents/' . $filename;
                 }
                 if ($request->hasFile('letterhead')) {
-                    $carData['letterhead'] = $request->file('letterhead')->store('car-documents', 'public');
+                    $filename = time() . '_' . uniqid() . '.' . $request->file('letterhead')->getClientOriginalExtension();
+                    $request->file('letterhead')->move(public_path('images/car-documents'), $filename);
+                    $carData['letterhead'] = 'images/car-documents/' . $filename;
                 }
                 if ($request->hasFile('means_of_identification')) {
-                    $carData['means_of_identification'] = $request->file('means_of_identification')->store('car-documents', 'public');
+                    $filename = time() . '_' . uniqid() . '.' . $request->file('means_of_identification')->getClientOriginalExtension();
+                    $request->file('means_of_identification')->move(public_path('images/car-documents'), $filename);
+                    $carData['means_of_identification'] = 'images/car-documents/' . $filename;
                 }
             }
 

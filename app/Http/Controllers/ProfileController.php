@@ -80,8 +80,13 @@ class ProfileController extends Controller
             if ($user->image) {
                 Storage::disk('public')->delete($user->image);
             }
-            
-            $imagePath = $request->file('image')->store('profile_images', 'public');
+                $oldPath = public_path($user->image);
+                if (file_exists($oldPath)) {
+                    @unlink($oldPath);
+                }
+                $filename = time() . '_' . uniqid() . '.' . $request->file('image')->getClientOriginalExtension();
+                $request->file('image')->move(public_path('images/profile_images'), $filename);
+                $data['image'] = 'images/profile_images/' . $filename;
             $data['image'] = $imagePath;
         }
 
@@ -95,7 +100,7 @@ class ProfileController extends Controller
                 'user_type_id' => $user->user_type_id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'email_verified_at' => $user->email_verified_at,
+                    'image' => $user->image ? asset($user->image) : null,
                 'image' => $user->image ? asset('storage/' . $user->image) : null,
                 'phone_number' => $user->phone_number,
                 'social_id' => $user->social_id,
@@ -129,7 +134,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Old password is incorrect',
-            ], 400);
+            ]);
         }
 
         $user->update(['password' => Hash::make($request->new_password)]);

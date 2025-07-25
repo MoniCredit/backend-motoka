@@ -56,13 +56,19 @@ class PlateController extends Controller
                 'license_years' => $request->license_years,
             ];
             if ($request->hasFile('cac_document')) {
-                $updateData['cac_document'] = $request->file('cac_document')->store('car-documents', 'public');
+                $filename = time() . '_' . uniqid() . '.' . $request->file('cac_document')->getClientOriginalExtension();
+                $request->file('cac_document')->move(public_path('images/car-documents'), $filename);
+                $updateData['cac_document'] = 'images/car-documents/' . $filename;
             }
             if ($request->hasFile('letterhead')) {
-                $updateData['letterhead'] = $request->file('letterhead')->store('car-documents', 'public');
+                $filename = time() . '_' . uniqid() . '.' . $request->file('letterhead')->getClientOriginalExtension();
+                $request->file('letterhead')->move(public_path('images/car-documents'), $filename);
+                $updateData['letterhead'] = 'images/car-documents/' . $filename;
             }
             if ($request->hasFile('means_of_identification')) {
-                $updateData['means_of_identification'] = $request->file('means_of_identification')->store('car-documents', 'public');
+                $filename = time() . '_' . uniqid() . '.' . $request->file('means_of_identification')->getClientOriginalExtension();
+                $request->file('means_of_identification')->move(public_path('images/car-documents'), $filename);
+                $updateData['means_of_identification'] = 'images/car-documents/' . $filename;
             }
             $car->update($updateData);
             return response()->json(['status' => 'success', 'car' => $car], 200);
