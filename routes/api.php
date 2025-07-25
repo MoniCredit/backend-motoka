@@ -59,6 +59,7 @@ Route::controller(AuthController::class)->group(function () {
             Route::put('/profile', [ProfileController::class, 'update']);     // Update profile
             Route::put('/change-password', [ProfileController::class, 'changePassword']);
             Route::delete('/delete-account', [ProfileController::class, 'deleteAccount']);
+            Route::post('/kyc', [ProfileController::class, 'storeKyc']); // KYC endpoint
         });
 
 

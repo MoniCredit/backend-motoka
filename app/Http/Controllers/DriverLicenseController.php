@@ -38,6 +38,7 @@ class DriverLicenseController extends Controller
                 'next_of_kin_phone' => 'required|string',
                 'mother_maiden_name' => 'required|string',
                 'license_year' => 'required|integer',
+                'passport_photograph' => 'required|image|mimes:jpeg,png,jpg|max:2048',
             ]);
         } elseif ($type === 'renew') {
             $rules = array_merge($baseRules, [
@@ -66,10 +67,18 @@ class DriverLicenseController extends Controller
                 'local_government', 'blood_group', 'height', 'occupation', 'next_of_kin', 'next_of_kin_phone',
                 'mother_maiden_name', 'license_year',
             ]));
+            // Save passport photograph before duplicate check
+            if ($request->hasFile('passport_photograph')) {
+                $filename = time() . '_' . uniqid() . '.' . $request->file('passport_photograph')->getClientOriginalExtension();
+                $request->file('passport_photograph')->move(public_path('images/driver-passports'), $filename);
+                $data['passport_photograph'] = 'images/driver-passports/' . $filename;
+            }
         } elseif ($type === 'renew') {
+            // Save expired license upload before duplicate check
             if ($request->hasFile('expired_license_upload')) {
-                $path = $request->file('expired_license_upload')->store('expired-licenses', 'public');
-                $data['expired_license_upload'] = $path;
+                $filename = time() . '_' . uniqid() . '.' . $request->file('expired_license_upload')->getClientOriginalExtension();
+                $request->file('expired_license_upload')->move(public_path('images/expired-licenses'), $filename);
+                $data['expired_license_upload'] = 'images/expired-licenses/' . $filename;
             }
             $data['full_name'] = $request->full_name;
             $data['date_of_birth'] = $request->date_of_birth;
@@ -77,22 +86,24 @@ class DriverLicenseController extends Controller
             $data['license_number'] = $request->license_number;
             $data['date_of_birth'] = $request->date_of_birth;
         }
-        // Prevent duplicate license for same user, full_name, and phone_number
-        $exists = \App\Models\DriverLicense::where([
-            'user_id' => $userId,
-            'full_name' => $request->full_name,
-            'phone_number' => $request->phone_number,
-        ])->where('status', '!=', 'rejected')->exists();
-        if ($exists) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'A driver license with this full name and phone number already exists.'
-            ], 409);
+        // Prevent duplicate license for same user, full_name, and phone_number (only for new)
+        if ($type === 'new' && $request->filled('full_name') && $request->filled('phone_number')) {
+            $exists = \App\Models\DriverLicense::where([
+                'user_id' => $userId,
+                'full_name' => $request->full_name,
+                'phone_number' => $request->phone_number,
+            ])->where('status', '!=', 'rejected')->exists();
+            if ($exists) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'A driver license with this full name and phone number already exists.'
+                ], 409);
+            }
         }
         $license = \App\Models\DriverLicense::create($data);
         return response()->json([
             'status' => 'success',
-            'license' => $license
+            'license' => $this->filterLicenseResponse($license)
         ]);
     }
 
@@ -103,7 +114,7 @@ class DriverLicenseController extends Controller
         $licenses = \App\Models\DriverLicense::where('user_id', $userId)->get();
         return response()->json([
             'status' => 'success',
-            'data' => $licenses
+            'data' => $licenses->map(fn($license) => $this->filterLicenseResponse($license))
         ]);
     }
 
@@ -209,13 +220,72 @@ class DriverLicenseController extends Controller
     {
         $userId= Auth::user()->userId;
         $license = DriverLicense::where(['id'=>$id,'user_id'=>$userId])->first();
-
-        if ( $license) {
-            return response()->json(["status"=> true,"data"=>$license],200);
+        if ($license) {
+            return response()->json(["status"=> true, "data" => $this->filterLicenseResponse($license)], 200);
         }
+        return response()->json(["status"=> false, "message"=> "License not found"], 401);
 
-        return response()->json(["status"=> false,"message"=> "License not found"],401);
+    }
 
+     /**
+     * Filter license response fields based on license type
+     */
+    private function filterLicenseResponse($license) {
+        $data = $license->toArray();
+        if ($license->license_type === 'renew') {
+            // Only show fields relevant to renew
+            return [
+                'id' => $license->id,
+                'user_id' => $license->user_id,
+                'license_type' => $license->license_type,
+                'status' => $license->status,
+                'expired_license_upload' => $license->expired_license_upload ?? null,
+                'full_name' => $license->full_name,
+                'date_of_birth' => $license->date_of_birth,
+                'created_at' => $license->created_at,
+                'updated_at' => $license->updated_at,
+            ];
+        } elseif ($license->license_type === 'lost_damaged') {
+            // Only show fields relevant to lost/damaged
+            return [
+                'id' => $license->id,
+                'user_id' => $license->user_id,
+                'license_type' => $license->license_type,
+                'status' => $license->status,
+                'license_number' => $license->license_number,
+                'date_of_birth' => $license->date_of_birth,
+                'created_at' => $license->created_at,
+                'updated_at' => $license->updated_at,
+            ];
+        } elseif ($license->license_type === 'new') {
+            // Only show fields relevant to new
+            return [
+                'id' => $license->id,
+                'user_id' => $license->user_id,
+                'license_type' => $license->license_type,
+                'status' => $license->status,
+                'full_name' => $license->full_name,
+                'phone_number' => $license->phone_number,
+                'address' => $license->address,
+                'date_of_birth' => $license->date_of_birth,
+                'place_of_birth' => $license->place_of_birth,
+                'state_of_origin' => $license->state_of_origin,
+                'local_government' => $license->local_government,
+                'blood_group' => $license->blood_group,
+                'height' => $license->height,
+                'occupation' => $license->occupation,
+                'next_of_kin' => $license->next_of_kin,
+                'next_of_kin_phone' => $license->next_of_kin_phone,
+                'mother_maiden_name' => $license->mother_maiden_name,
+                'license_year' => $license->license_year,
+                'passport_photograph' => $license->passport_photograph,
+                'created_at' => $license->created_at,
+                'updated_at' => $license->updated_at,
+            ];
+        } else {
+            // Fallback: show all fields
+            return $data;
+        }
     }
 
     // New: Get all driver license payment options
