@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
 class ProfileController extends Controller
+
 {
     public function show()
     {
@@ -200,6 +201,66 @@ class ProfileController extends Controller
             'success' => true,
             'message' => 'Account restored successfully',
             'data' => $user,
+        ]);
+    }
+
+
+     // ...existing code...
+    /**
+     * KYC endpoint: update NIN and phone_number, and trigger Monicredit wallet creation if both are present.
+     */
+    public function storeKyc(Request $request)
+    {
+        $user = Auth::user();
+        $validated = $request->validate([
+            'nin' => 'required|string',
+            'phone_number' => 'required|string|unique:users,phone_number,' . $user->id,
+        ]);
+
+        $user->nin = $validated['nin'];
+        $user->phone_number = $validated['phone_number'];
+        $user->save();
+
+        // Monicredit wallet creation if not already created
+        if (empty($user->monicredit_customer_id)) {
+            try {
+                $nameParts = explode(' ', trim($user->name));
+                $firstName = $nameParts[0] ?? '';
+                $lastName = isset($nameParts[1]) ? implode(' ', array_slice($nameParts, 1)) : $firstName;
+                $walletPayload = [
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'phone' => $user->phone_number,
+                    'email' => $user->email,
+                    'nin' => $user->nin,
+                ];
+                $privateKey = env('MONICREDIT_PRIVATE_KEY');
+                $headers = [
+                    'Authorization' => 'Bearer ' . $privateKey,
+                ];
+                \Log::info('Monicredit wallet creation payload (KYC)', ['payload' => $walletPayload, 'headers' => $headers]);
+                $walletResponse = \Http::withHeaders($headers)->post('https://live.backend.monicredit.com/api/v1/payment/virtual-account/create', $walletPayload);
+                $walletData = $walletResponse->json();
+                if (isset($walletData['status']) && $walletData['status'] === true && isset($walletData['data']['customer_id'])) {
+                    $user->monicredit_customer_id = $walletData['data']['customer_id'];
+                    $user->save();
+                } else {
+                    \Log::error('Monicredit wallet creation failed (KYC)', ['response' => $walletData]);
+                }
+                \Log::info('Monicredit wallet creation response (KYC)', ['user_id' => $user->id, 'response' => $walletData]);
+            } catch (\Exception $e) {
+                \Log::error('Monicredit wallet creation exception (KYC): ' . $e->getMessage());
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'KYC updated successfully',
+            'data' => [
+                'nin' => $user->nin,
+                'phone_number' => $user->phone_number,
+                'monicredit_customer_id' => $user->monicredit_customer_id ?? null,
+            ]
         ]);
     }
 }
