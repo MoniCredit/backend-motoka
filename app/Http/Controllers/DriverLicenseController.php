@@ -38,6 +38,7 @@ class DriverLicenseController extends Controller
                 'next_of_kin_phone' => 'required|string',
                 'mother_maiden_name' => 'required|string',
                 'license_year' => 'required|integer',
+                'passport_photograph' => 'required|image|mimes:jpeg,png,jpg|max:2048',
             ]);
         } elseif ($type === 'renew') {
             $rules = array_merge($baseRules, [
@@ -66,6 +67,11 @@ class DriverLicenseController extends Controller
                 'local_government', 'blood_group', 'height', 'occupation', 'next_of_kin', 'next_of_kin_phone',
                 'mother_maiden_name', 'license_year',
             ]));
+            // Handle passport photograph upload
+            if ($request->hasFile('passport_photograph')) {
+                $passportPath = $request->file('passport_photograph')->store('driver-passports', 'public');
+                $data['passport_photograph'] = $passportPath;
+            }
         } elseif ($type === 'renew') {
             if ($request->hasFile('expired_license_upload')) {
                 $path = $request->file('expired_license_upload')->store('expired-licenses', 'public');
