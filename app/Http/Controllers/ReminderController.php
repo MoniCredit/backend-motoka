@@ -6,6 +6,7 @@ use App\Models\Reminder;
 use App\Models\Car;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class ReminderController extends Controller
 {
@@ -23,7 +24,7 @@ class ReminderController extends Controller
             ->get();
 
        
-        \Log::info('Fetched Reminders for User ID ' . $userId . ':', $reminders->toArray());
+        Log::info('Fetched Reminders for User ID ' . $userId . ':', $reminders->toArray());
 
         if ($reminders->isEmpty()) {
             return response()->json([

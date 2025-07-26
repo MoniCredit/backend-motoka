@@ -182,12 +182,12 @@ class CarController extends Controller
 
             $car = Car::create($carData);
 
-            // Do not set reminders here, as dates are not set yet
-            // if ($request->registration_status === 'registered' && $request->expiry_date) {
-            //     $this->handleReminder($userId, $request->expiry_date, 'car', $car->id);
-            // } else {
-            //     $this->deleteReminder($userId, 'car', $car->id);
-            // }
+            // Set reminders for registered cars with expiry date
+            if ($request->registration_status === 'registered' && $request->expiry_date) {
+                $this->handleReminder($userId, $request->expiry_date, 'car', $car->id);
+            } else {
+                $this->deleteReminder($userId, 'car', $car->id);
+            }
 
            
             Notification::create([
