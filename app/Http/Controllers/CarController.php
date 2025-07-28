@@ -241,6 +241,15 @@ class CarController extends Controller
             ->orderBy('created_at', 'asc')
             ->get();
 
+        // Ensure reminders are up-to-date for each car
+        foreach ($cars as $car) {
+            if ($car->registration_status === 'registered' && $car->expiry_date) {
+                $this->handleReminder($user_id, $car->expiry_date, 'car', $car->id);
+            } else {
+                $this->deleteReminder($user_id, 'car', $car->id);
+            }
+        }
+
         return response()->json([
             'status' => 'success',
             'cars' => $cars->map(fn($car) => $this->filterCarResponse($car)),
@@ -265,6 +274,12 @@ class CarController extends Controller
                 'status' => 'error',
                 'message' => 'You do not have permission to access this car.'
             ], 403);
+        }
+        // Ensure reminder is up-to-date for this car
+        if ($car->registration_status === 'registered' && $car->expiry_date) {
+            $this->handleReminder($userId, $car->expiry_date, 'car', $car->id);
+        } else {
+            $this->deleteReminder($userId, 'car', $car->id);
         }
         return response()->json([
             'status' => 'success',
