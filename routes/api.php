@@ -48,9 +48,10 @@ Route::controller(AuthController::class)->group(function () {
         });
 
         Route::prefix('plate-number')->group(function () {
-            Route::post('/apply', [PlateController::class, 'store']); // Apply for license
-            Route::get('/', [PlateController::class, 'index']);       // List all licenses
-            Route::get('/{id}', [PlateController::class, 'show']);    // Get a single license
+            Route::post('/apply', [PlateController::class, 'store']); // Apply for plate
+            Route::get('/', [PlateController::class, 'index']);       // List all plate applications
+            Route::get('/{id}', [PlateController::class, 'show']);    // Get a single plate application
+            Route::get('/types', [PlateController::class, 'getPlateTypes']); // Get available plate types
         });
 
 
@@ -72,6 +73,7 @@ Route::controller(AuthController::class)->group(function () {
         Route::get('cars/{id}', [CarController::class, 'show']);
         Route::put('cars/{id}', [CarController::class, 'update']);
         Route::delete('cars/{id}', [CarController::class, 'destroy']);
+        Route::post('cars/{car_id}/add-plate', [CarController::class, 'addPlateToUnregisteredCar']);
         Route::post('initiate', [CarController::class, 'InsertDetail']);
         Route::post('verify', [CarController::class, 'Verification']);
         Route::get('get-all-state', [CarController::class, 'getAllState']);

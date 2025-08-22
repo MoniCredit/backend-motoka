@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Car;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 
 class PlateController extends Controller
 {
@@ -21,126 +22,264 @@ class PlateController extends Controller
     public function store(Request $request)
     {
         $userId = Auth::user()->userId;
-        if ($request->car_id) {
-            // Attach plate info to existing unregistered car
-            $plateRules = [
-                'car_id' => 'required|exists:cars,id',
-                // 'plate_number' => 'required|string|unique:cars,plate_number,' . $request->car_id, // No longer required
-                'type' => 'required|in:Normal,Customized,Dealership',
-                'preferred_name' => 'nullable|string',
-                'business_type' => 'nullable|in:Co-operate,Business',
-                'cac_document' => 'nullable|file|mimes:pdf,jpg,png',
-                'letterhead' => 'nullable|file|mimes:pdf,jpg,png',
-                'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png',
-            ];
-            $validated = $request->validate($plateRules);
-            $car = \App\Models\Car::where('id', $request->car_id)
-                ->where('user_id', $userId)
-                ->where('registration_status', 'unregistered')
-                ->first();
-            if (!$car) {
-                return response()->json(['status' => 'error', 'message' => 'Unregistered car not found'], 404);
-            }
-            $updateData = [
-                'type' => $request->type,
-                'preferred_name' => $request->preferred_name,
-                'business_type' => $request->business_type,
-                'state_of_origin' => $request->state_of_origin,
-                'local_government' => $request->local_government,
-                'blood_group' => $request->blood_group,
-                'height' => $request->height,
-                'occupation' => $request->occupation,
-                'next_of_kin' => $request->next_of_kin,
-                'next_of_kin_phone' => $request->next_of_kin_phone,
-                'mother_maiden_name' => $request->mother_maiden_name,
-                'license_years' => $request->license_years,
-            ];
-            if ($request->hasFile('cac_document')) {
-                $filename = time() . '_' . uniqid() . '.' . $request->file('cac_document')->getClientOriginalExtension();
-                $request->file('cac_document')->move(public_path('images/car-documents'), $filename);
-                $updateData['cac_document'] = 'images/car-documents/' . $filename;
-            }
-            if ($request->hasFile('letterhead')) {
-                $filename = time() . '_' . uniqid() . '.' . $request->file('letterhead')->getClientOriginalExtension();
-                $request->file('letterhead')->move(public_path('images/car-documents'), $filename);
-                $updateData['letterhead'] = 'images/car-documents/' . $filename;
-            }
-            if ($request->hasFile('means_of_identification')) {
-                $filename = time() . '_' . uniqid() . '.' . $request->file('means_of_identification')->getClientOriginalExtension();
-                $request->file('means_of_identification')->move(public_path('images/car-documents'), $filename);
-                $updateData['means_of_identification'] = 'images/car-documents/' . $filename;
-            }
-            $car->update($updateData);
-            return response()->json(['status' => 'success', 'car' => $car], 200);
+        
+        // Base validation rules
+        $baseRules = [
+            'type' => 'required|in:Normal,Customized,Dealership',
+            'preferred_name' => 'nullable|string|max:255',
+            'cac_document' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'letterhead' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
+        ];
+
+        // Additional rules for dealership type (only files required for add-plate, full details for new application)
+        $dealershipRules = [
+            'business_type' => 'required|in:Co-operate,Business',
+            'cac_document' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'letterhead' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+        ];
+
+        // Additional rules for customized type
+        $customizedRules = [
+            'preferred_name' => 'required|string|max:255',
+            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+        ];
+
+        // Initialize rules based on type
+        if ($request->type === 'Dealership') {
+            $rules = array_merge($baseRules, $dealershipRules);
+        } elseif ($request->type === 'Customized') {
+            $rules = array_merge($baseRules, $customizedRules);
         } else {
-            // Create new unregistered car with plate info
-            $rules = [
-                // 'plate_number' => 'required|string|unique:cars,plate_number', // No longer required
-                'type' => 'required|in:Normal,Customized,Dealership',
-                'preferred_name' => 'nullable|string',
-                'full_name' => 'required|string',
+            $rules = $baseRules;
+        }
+
+        // Add car-specific rules if car_id is provided
+        if ($request->car_id) {
+            $rules['car_id'] = 'required|exists:cars,id';
+        } else {
+            // Rules for creating new car - need full details for dealership
+            $rules = array_merge($rules, [
+                'full_name' => 'required|string|max:255',
                 'address' => 'required|string',
                 'chasis_no' => 'required|string|unique:cars,chasis_no',
                 'engine_no' => 'required|string|unique:cars,engine_no',
                 'phone_number' => 'required|string',
-                'vehicle_make' => 'required|string',
-                'vehicle_model' => 'required|string',
-                'vehicle_color' => 'required|string',
+                'vehicle_make' => 'required|string|max:255',
+                'vehicle_model' => 'required|string|max:255',
+                'vehicle_color' => 'required|string|max:50',
                 'car_type' => 'required|in:private,commercial',
-                'business_type' => 'nullable|in:Co-operate,Business',
-                'cac_document' => 'nullable|file|mimes:pdf,jpg,png',
-                'letterhead' => 'nullable|file|mimes:pdf,jpg,png',
-                'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png',
-                // New fields
-                'state_of_origin' => 'nullable|string',
-                'local_government' => 'nullable|string',
-                'blood_group' => 'nullable|string',
-                'height' => 'nullable|string',
-                'occupation' => 'nullable|string',
-                'next_of_kin' => 'nullable|string',
-                'next_of_kin_phone' => 'nullable|string',
-                'mother_maiden_name' => 'nullable|string',
-                'license_years' => 'nullable|string',
-            ];
-            $validated = $request->validate($rules);
-            $carData = [
-                'user_id' => $userId,
-                // 'plate_number' => $request->plate_number, // Do not set here
-                'type' => $request->type,
-                'preferred_name' => $request->preferred_name,
-                'name_of_owner' => $request->full_name, // Map full_name to name_of_owner
-                'address' => $request->address,
-                'chasis_no' => $request->chasis_no,
-                'engine_no' => $request->engine_no,
-                'phone_number' => $request->phone_number,
-                'vehicle_make' => $request->vehicle_make,
-                'vehicle_model' => $request->vehicle_model,
-                'vehicle_color' => $request->vehicle_color,
-                'car_type' => $request->car_type,
-                'registration_status' => 'unregistered',
-                'business_type' => $request->business_type,
-                // New fields
-                'state_of_origin' => $request->state_of_origin,
-                'local_government' => $request->local_government,
-                'blood_group' => $request->blood_group,
-                'height' => $request->height,
-                'occupation' => $request->occupation,
-                'next_of_kin' => $request->next_of_kin,
-                'next_of_kin_phone' => $request->next_of_kin_phone,
-                'mother_maiden_name' => $request->mother_maiden_name,
-                'license_years' => $request->license_years,
-            ];
-            if ($request->hasFile('cac_document')) {
-                $carData['cac_document'] = $request->file('cac_document')->store('car-documents', 'public');
+                'vehicle_year' => 'required|integer|digits:4|min:1900|max:' . (date('Y') + 1),
+            ]);
+            
+            // For new car, dealership needs company details
+            if ($request->type === 'Dealership') {
+                $rules = array_merge($rules, [
+                    'company_name' => 'required|string|max:255',
+                    'company_address' => 'required|string',
+                    'company_phone' => 'required|string',
+                    'cac_number' => 'required|string|max:255',
+                ]);
             }
-            if ($request->hasFile('letterhead')) {
-                $carData['letterhead'] = $request->file('letterhead')->store('car-documents', 'public');
-            }
-            if ($request->hasFile('means_of_identification')) {
-                $carData['means_of_identification'] = $request->file('means_of_identification')->store('car-documents', 'public');
-            }
-            $car = \App\Models\Car::create($carData);
-            return response()->json(['status' => 'success', 'car' => $car], 201);
         }
+
+        $validator = Validator::make($request->all(), $rules);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            if ($request->car_id) {
+                // Attach plate info to existing unregistered car
+                $car = Car::where('id', $request->car_id)
+                    ->where('user_id', $userId)
+                    ->where('registration_status', 'unregistered')
+                    ->first();
+
+                if (!$car) {
+                    return response()->json([
+                        'status' => 'error', 
+                        'message' => 'Unregistered car not found'
+                    ], 404);
+                }
+
+                $updateData = [
+                    'type' => $request->type,
+                    'preferred_name' => $request->preferred_name,
+                ];
+
+                // Handle dealership specific fields
+                if ($request->type === 'Dealership') {
+                    $updateData = array_merge($updateData, [
+                        'business_type' => $request->business_type,
+                    ]);
+                }
+
+                // Handle file uploads
+                $this->handleFileUploads($request, $updateData);
+
+                $car->update($updateData);
+
+                return response()->json([
+                    'status' => 'success', 
+                    'message' => 'Plate information updated successfully',
+                    'car' => $car
+                ], 200);
+
+            } else {
+                // Create new unregistered car with plate info
+                $carData = [
+                    'user_id' => $userId,
+                    'type' => $request->type,
+                    'preferred_name' => $request->preferred_name,
+                    'name_of_owner' => $request->full_name,
+                    'address' => $request->address,
+                    'chasis_no' => $request->chasis_no,
+                    'engine_no' => $request->engine_no,
+                    'phone_number' => $request->phone_number,
+                    'vehicle_make' => $request->vehicle_make,
+                    'vehicle_model' => $request->vehicle_model,
+                    'vehicle_color' => $request->vehicle_color,
+                    'car_type' => $request->car_type,
+                    'vehicle_year' => $request->vehicle_year,
+                    'registration_status' => 'unregistered',
+                    'status' => 'unpaid',
+                ];
+
+                // Handle dealership specific fields
+                if ($request->type === 'Dealership') {
+                    $carData = array_merge($carData, [
+                        'business_type' => $request->business_type,
+                        'company_name' => $request->company_name,
+                        'company_address' => $request->company_address,
+                        'company_phone' => $request->company_phone,
+                        'cac_number' => $request->cac_number,
+                    ]);
+                }
+
+                // Handle file uploads
+                $this->handleFileUploads($request, $carData);
+
+                $car = Car::create($carData);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Plate application submitted successfully',
+                    'car' => $car
+                ], 201);
+            }
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to process plate application',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Handle file uploads for plate applications
+     */
+    private function handleFileUploads(Request $request, array &$data)
+    {
+        $uploadFields = ['cac_document', 'letterhead', 'means_of_identification'];
+        
+        foreach ($uploadFields as $field) {
+            if ($request->hasFile($field)) {
+                $file = $request->file($field);
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $file->move(public_path('images/car-documents'), $filename);
+                $data[$field] = 'images/car-documents/' . $filename;
+            }
+        }
+    }
+
+    /**
+     * Get plate application details
+     */
+    public function show($id)
+    {
+        $userId = Auth::user()->userId;
+        $car = Car::where('id', $id)
+            ->where('user_id', $userId)
+            ->where('registration_status', 'unregistered')
+            ->first();
+
+        if (!$car) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Plate application not found'
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'car' => $car
+        ]);
+    }
+
+    /**
+     * Get available plate types and their requirements
+     */
+    public function getPlateTypes()
+    {
+        $plateTypes = [
+            'Normal' => [
+                'name' => 'Normal',
+                'description' => 'Standard plate number',
+                'requirements' => [
+                    'Vehicle details',
+                    'Owner information'
+                ]
+            ],
+            'Customized' => [
+                'name' => 'Customized',
+                'description' => 'Personalized plate number',
+                'requirements' => [
+                    'Vehicle details',
+                    'Owner information',
+                    'Preferred name',
+                    'Means of identification'
+                ]
+            ],
+            'Dealership' => [
+                'name' => 'Dealership',
+                'description' => 'Business/Corporate plate number',
+                'sub_types' => [
+                    'Co-operate' => [
+                        'name' => 'Co-operate',
+                        'description' => 'Corporate organization plate',
+                        'requirements' => [
+                            'Company details',
+                            'CAC registration',
+                            'Letterhead',
+                            'Means of identification'
+                        ]
+                    ],
+                    'Business' => [
+                        'name' => 'Business',
+                        'description' => 'Business organization plate',
+                        'requirements' => [
+                            'Company details',
+                            'CAC registration',
+                            'Letterhead',
+                            'Means of identification'
+                        ]
+                    ]
+                ]
+            ]
+        ];
+
+        return response()->json([
+            'status' => 'success',
+            'plate_types' => $plateTypes
+        ]);
     }
 }

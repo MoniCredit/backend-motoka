@@ -37,6 +37,11 @@ class Car extends Model
         'cac_document',
         'letterhead',
         'means_of_identification',
+        // Dealership specific fields
+        'company_name',
+        'company_address',
+        'company_phone',
+        'cac_number',
         // New plate number fields
         'state_of_origin',
         'local_government',

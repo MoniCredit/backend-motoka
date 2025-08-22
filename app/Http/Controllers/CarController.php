@@ -625,34 +625,73 @@ public function getLgaByState($state_id)
         if (!$car) {
             return response()->json(['status' => 'error', 'message' => 'Unregistered car not found'], 404);
         }
-        $rules = [
-            'plate_number' => 'required|string|unique:cars,plate_number,' . $car->id,
+        
+        // Base validation rules
+        $baseRules = [
             'type' => 'required|in:Normal,Customized,Dealership',
-            'preferred_name' => 'nullable|string',
-            'business_type' => 'nullable|in:Co-operate,Business',
-            'cac_document' => 'nullable|file|mimes:pdf,jpg,png',
-            'letterhead' => 'nullable|file|mimes:pdf,jpg,png',
-            'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png',
+            'preferred_name' => 'nullable|string|max:255',
+            'cac_document' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'letterhead' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
         ];
+
+        // Additional rules for dealership type (only files required)
+        $dealershipRules = [
+            'business_type' => 'required|in:Co-operate,Business',
+            'cac_document' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'letterhead' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+        ];
+
+        // Additional rules for customized type
+        $customizedRules = [
+            'preferred_name' => 'required|string|max:255',
+            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+        ];
+
+        // Apply validation rules based on type
+        if ($request->type === 'Dealership') {
+            $rules = array_merge($baseRules, $dealershipRules);
+        } elseif ($request->type === 'Customized') {
+            $rules = array_merge($baseRules, $customizedRules);
+        } else {
+            $rules = $baseRules;
+        }
+
         $validator = Validator::make($request->all(), $rules);
         if ($validator->fails()) {
             return response()->json(['status' => 'error', 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
         }
+        
         $updateData = [
-            'plate_number' => $request->plate_number,
             'type' => $request->type,
             'preferred_name' => $request->preferred_name,
-            'business_type' => $request->business_type,
         ];
+
+        // Handle dealership specific fields
+        if ($request->type === 'Dealership') {
+            $updateData = array_merge($updateData, [
+                'business_type' => $request->business_type,
+            ]);
+        }
+
+        // Handle file uploads
         if ($request->hasFile('cac_document')) {
-            $updateData['cac_document'] = $request->file('cac_document')->store('car-documents', 'public');
+            $filename = time() . '_' . uniqid() . '.' . $request->file('cac_document')->getClientOriginalExtension();
+            $request->file('cac_document')->move(public_path('images/car-documents'), $filename);
+            $updateData['cac_document'] = 'images/car-documents/' . $filename;
         }
         if ($request->hasFile('letterhead')) {
-            $updateData['letterhead'] = $request->file('letterhead')->store('car-documents', 'public');
+            $filename = time() . '_' . uniqid() . '.' . $request->file('letterhead')->getClientOriginalExtension();
+            $request->file('letterhead')->move(public_path('images/car-documents'), $filename);
+            $updateData['letterhead'] = 'images/car-documents/' . $filename;
         }
         if ($request->hasFile('means_of_identification')) {
-            $updateData['means_of_identification'] = $request->file('means_of_identification')->store('car-documents', 'public');
+            $filename = time() . '_' . uniqid() . '.' . $request->file('means_of_identification')->getClientOriginalExtension();
+            $request->file('means_of_identification')->move(public_path('images/car-documents'), $filename);
+            $updateData['means_of_identification'] = 'images/car-documents/' . $filename;
         }
+        
         $car->update($updateData);
         return response()->json(['status' => 'success', 'message' => 'Plate info added to car', 'car' => $car]);
     }
@@ -662,7 +701,9 @@ public function getLgaByState($state_id)
         $plateFields = [
             'plate_number', 'type', 'preferred_name', 'business_type', 'cac_document', 'letterhead',
             'means_of_identification', 'state_of_origin', 'local_government', 'blood_group', 'height',
-            'occupation', 'next_of_kin', 'next_of_kin_phone', 'mother_maiden_name', 'license_years'
+            'occupation', 'next_of_kin', 'next_of_kin_phone', 'mother_maiden_name', 'license_years',
+            // Dealership specific fields
+            'company_name', 'company_address', 'company_phone', 'cac_number'
         ];
         if ($car->registration_status === 'registered') {
             foreach ($plateFields as $field) {
