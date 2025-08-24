@@ -94,6 +94,7 @@ Route::controller(AuthController::class)->group(function () {
             Route::post('/initialize', [PaymentController::class, 'initializePayment']);
             Route::post('/verify-payment/{transaction_id}', [PaymentController::class, 'verifyPayment']);
             Route::get('/car-receipt/{car_id}', [PaymentController::class, 'getCarPaymentReceipt']);
+            Route::get('/receipt/{payment_id}', [PaymentController::class, 'getPaymentReceipt']);
             Route::get('/wallet', [PaymentController::class, 'getWalletInfo']);
             Route::delete('/receipt/{payment_id}', [PaymentController::class, 'deleteReceipt']);
             Route::get('/transactions', [PaymentController::class, 'listUserTransactions']);
