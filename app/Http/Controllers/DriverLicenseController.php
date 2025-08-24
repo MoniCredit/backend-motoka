@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use App\Models\Notification;
 use App\Models\DriverLicensePayment;
 use Illuminate\Support\Str;
@@ -154,8 +155,32 @@ class DriverLicenseController extends Controller
             'total_amount' => $option->amount,
             'meta_data' => $metaData,
         ];
-        $response = Http::post(env('MONICREDIT_BASE_URL') . '/payment/transactions/init-transaction', $payload);
-        $data = $response->json();
+        // Check if MONICREDIT_BASE_URL is configured
+        $baseUrl = env('MONICREDIT_BASE_URL');
+        if (empty($baseUrl)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Payment gateway configuration error. Please contact support.',
+                'error' => 'MONICREDIT_BASE_URL not configured'
+            ], 500);
+        }
+
+        try {
+            $response = Http::timeout(30)->post($baseUrl . '/payment/transactions/init-transaction', $payload);
+            $data = $response->json();
+        } catch (\Exception $e) {
+            // Log::error('Monicredit API error in DriverLicenseController', [
+            //     'error' => $e->getMessage(),
+            //     'url' => $baseUrl . '/payment/transactions/init-transaction',
+            //     'payload' => $payload
+            // ]);
+            
+            return response()->json([
+                'status' => false,
+                'message' => 'Payment gateway connection error. Please try again later.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
         // Save transaction
         $txn = DriverLicenseTransaction::create([
             'transaction_id' => $transaction_id,
@@ -181,19 +206,66 @@ class DriverLicenseController extends Controller
     // Verify payment for a specific license (Monicredit integration)
     public function verifyPaymentForLicense(Request $request, $id)
     {
-        $license = \App\Models\DriverLicense::find($id);
-        if (!$license || $license->user_id !== Auth::user()->userId) {
-            return response()->json(['status' => 'error', 'message' => 'License not found'], 404);
+        $user = Auth::user();
+        
+        // EARLY ACCESS CONTROL: Check if user owns this license BEFORE making API call
+        $license = \App\Models\DriverLicense::where('id', $id)
+            ->where('user_id', $user->userId)
+            ->first();
+            
+        if (!$license) {
+            Log::warning('Unauthorized license verification attempt', [
+                'user_id' => $user->id,
+                'user_userId' => $user->userId,
+                'license_id' => $id,
+                'ip' => request()->ip()
+            ]);
+            
+            return response()->json([
+                'status' => 'error', 
+                'message' => 'License not found or access denied'
+            ], 404);
         }
-        $txn = DriverLicenseTransaction::where('driver_license_id', $license->id)->orderBy('created_at', 'desc')->first();
+        
+        $txn = DriverLicenseTransaction::where('driver_license_id', $license->id)
+            ->orderBy('created_at', 'desc')
+            ->first();
+            
         if (!$txn) {
-            return response()->json(['status' => 'error', 'message' => 'No payment transaction found'], 404);
+            return response()->json([
+                'status' => 'error', 
+                'message' => 'No payment transaction found'
+            ], 404);
         }
-        $response = Http::post(env('MONICREDIT_BASE_URL') . '/payment/transactions/verify-transaction', [
-            'transaction_id' => $txn->transaction_id,
-            'private_key' => env('MONICREDIT_PRIVATE_KEY'),
-        ]);
-        $data = $response->json();
+        // Check if MONICREDIT_BASE_URL is configured
+        $baseUrl = env('MONICREDIT_BASE_URL');
+        if (empty($baseUrl)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Payment gateway configuration error. Please contact support.',
+                'error' => 'MONICREDIT_BASE_URL not configured'
+            ], 500);
+        }
+
+        try {
+            $response = Http::timeout(30)->post($baseUrl . '/payment/transactions/verify-transaction', [
+                'transaction_id' => $txn->transaction_id,
+                'private_key' => env('MONICREDIT_PRIVATE_KEY'),
+            ]);
+            $data = $response->json();
+        } catch (\Exception $e) {
+            // Log::error('Monicredit verification API error in DriverLicenseController', [
+            //     'error' => $e->getMessage(),
+            //     'url' => $baseUrl . '/payment/transactions/verify-transaction',
+            //     'transaction_id' => $txn->transaction_id
+            // ]);
+            
+            return response()->json([
+                'status' => false,
+                'message' => 'Payment verification connection error. Please try again later.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
         if (isset($data['status']) && $data['status'] == true) {
             $txn->update([
                 'status' => strtolower($data['data']['status']),

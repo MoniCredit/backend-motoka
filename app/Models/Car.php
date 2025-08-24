@@ -5,12 +5,31 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 
 class Car extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasUuids;
 
-    
+    /**
+     * The data type of the auto-incrementing ID.
+     *
+     * @var string
+     */
+    protected $keyType = 'string';
+
+    /**
+     * Indicates if the IDs are auto-incrementing.
+     *
+     * @var bool
+     */
+    public $incrementing = false;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array
+     */
     protected $fillable = [
         'user_id',
         'name_of_owner',
@@ -37,6 +56,11 @@ class Car extends Model
         'cac_document',
         'letterhead',
         'means_of_identification',
+        // Dealership specific fields
+        'company_name',
+        'company_address',
+        'company_phone',
+        'cac_number',
         // New plate number fields
         'state_of_origin',
         'local_government',
@@ -48,7 +72,6 @@ class Car extends Model
         'mother_maiden_name',
         'license_years',
     ];
-
 
     protected $dates = [
         'date_issued',

@@ -48,9 +48,10 @@ Route::controller(AuthController::class)->group(function () {
         });
 
         Route::prefix('plate-number')->group(function () {
-            Route::post('/apply', [PlateController::class, 'store']); // Apply for license
-            Route::get('/', [PlateController::class, 'index']);       // List all licenses
-            Route::get('/{id}', [PlateController::class, 'show']);    // Get a single license
+            Route::post('/apply', [PlateController::class, 'store']); // Apply for plate
+            Route::get('/', [PlateController::class, 'index']);       // List all plate applications
+            Route::get('/{id}', [PlateController::class, 'show']);    // Get a single plate application
+            Route::get('/types', [PlateController::class, 'getPlateTypes']); // Get available plate types
         });
 
 
@@ -72,6 +73,7 @@ Route::controller(AuthController::class)->group(function () {
         Route::get('cars/{id}', [CarController::class, 'show']);
         Route::put('cars/{id}', [CarController::class, 'update']);
         Route::delete('cars/{id}', [CarController::class, 'destroy']);
+        Route::post('cars/{car_id}/add-plate', [CarController::class, 'addPlateToUnregisteredCar']);
         Route::post('initiate', [CarController::class, 'InsertDetail']);
         Route::post('verify', [CarController::class, 'Verification']);
         Route::get('get-all-state', [CarController::class, 'getAllState']);
@@ -92,6 +94,7 @@ Route::controller(AuthController::class)->group(function () {
             Route::post('/initialize', [PaymentController::class, 'initializePayment']);
             Route::post('/verify-payment/{transaction_id}', [PaymentController::class, 'verifyPayment']);
             Route::get('/car-receipt/{car_id}', [PaymentController::class, 'getCarPaymentReceipt']);
+            Route::get('/receipt/{payment_id}', [PaymentController::class, 'getPaymentReceipt']);
             Route::get('/wallet', [PaymentController::class, 'getWalletInfo']);
             Route::delete('/receipt/{payment_id}', [PaymentController::class, 'deleteReceipt']);
             Route::get('/transactions', [PaymentController::class, 'listUserTransactions']);

@@ -85,7 +85,7 @@ class ReminderController extends Controller
             'type' => 'required|string',
             'message' => 'required|string',
             'remind_at' => 'required|date',
-            'ref_id' => 'required|integer',
+            'ref_id' => 'required|string',
         ]);
 
         $userId = Auth::user()->userId;
