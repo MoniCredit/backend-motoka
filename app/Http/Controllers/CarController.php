@@ -51,7 +51,7 @@ class CarController extends Controller
             'registration_no' => 'required|string',
             'date_issued' => 'required|date',
             'expiry_date' => 'required|date|after:date_issued',
-            'document_images.*' => 'required|file|mimes:jpeg,png,jpg,pdf|max:2048',
+            'document_images' => 'required|file|mimes:jpeg,png,jpg,pdf|max:10240',
         ];
 
         // Plate fields for unregistered cars
@@ -119,11 +119,10 @@ class CarController extends Controller
         // Handle document images upload to public/images/car-documents
         $documentImages = [];
         if ($request->hasFile('document_images')) {
-            foreach ($request->file('document_images') as $image) {
-                $filename = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
-                $image->move(public_path('images/car-documents'), $filename);
-                $documentImages[] = 'images/car-documents/' . $filename;
-            }
+            $image = $request->file('document_images');
+            $filename = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
+            $image->move(public_path('images/car-documents'), $filename);
+            $documentImages[] = 'images/car-documents/' . $filename;
         }
 
         // $user_id = Auth::user()->id;
@@ -321,7 +320,7 @@ class CarController extends Controller
             'registration_no' => 'nullable|string',
             'date_issued' => 'nullable|date',
             'expiry_date' => 'nullable|date|after:date_issued',
-            'document_images.*' => 'nullable |image|mimes:jpeg,png,jpg|max:2048',
+            'document_images' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
         ]);
 
         if ($validator->fails()) {
@@ -335,12 +334,10 @@ class CarController extends Controller
         // Handle new document images
         if ($request->hasFile('document_images')) {
             $documentImages = $car->document_images ?? [];
-
-            foreach ($request->file('document_images') as $image) {
-                $path = $image->store('car-documents', 'public');
-                $documentImages[] = $path;
-            }
-
+            $image = $request->file('document_images');
+            $filename = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
+            $image->move(public_path('images/car-documents'), $filename);
+            $documentImages[] = 'images/car-documents/' . $filename;
             $car->document_images = $documentImages;
         }
 
@@ -630,23 +627,23 @@ public function getLgaByState($state_id)
         $baseRules = [
             'type' => 'required|in:Normal,Customized,Dealership',
             'preferred_name' => 'nullable|string|max:255',
-            'cac_document' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
-            'letterhead' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
-            'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'cac_document' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:10240',
+            'letterhead' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:10240',
+            'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:10240',
         ];
 
         // Additional rules for dealership type (only files required)
         $dealershipRules = [
             'business_type' => 'required|in:Co-operate,Business',
-            'cac_document' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
-            'letterhead' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
-            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'cac_document' => 'required|file|mimes:pdf,jpg,png,jpeg|max:10240',
+            'letterhead' => 'required|file|mimes:pdf,jpg,png,jpeg|max:10240',
+            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:10240',
         ];
 
         // Additional rules for customized type
         $customizedRules = [
             'preferred_name' => 'required|string|max:255',
-            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:10240',
         ];
 
         // Apply validation rules based on type

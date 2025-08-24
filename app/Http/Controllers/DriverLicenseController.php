@@ -39,13 +39,11 @@ class DriverLicenseController extends Controller
                 'next_of_kin_phone' => 'required|string',
                 'mother_maiden_name' => 'required|string',
                 'license_year' => 'required|integer',
-                'passport_photograph' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+                'passport_photograph' => 'required|image|mimes:jpeg,png,jpg|max:10240',
             ]);
         } elseif ($type === 'renew') {
             $rules = array_merge($baseRules, [
                 'expired_license_upload' => 'required|file|mimes:jpeg,png,jpg,pdf',
-                'full_name' => 'nullable|string',
-                'date_of_birth' => 'nullable|date',
             ]);
         } elseif ($type === 'lost_damaged') {
             $rules = array_merge($baseRules, [
@@ -81,8 +79,6 @@ class DriverLicenseController extends Controller
                 $request->file('expired_license_upload')->move(public_path('images/expired-licenses'), $filename);
                 $data['expired_license_upload'] = 'images/expired-licenses/' . $filename;
             }
-            $data['full_name'] = $request->full_name;
-            $data['date_of_birth'] = $request->date_of_birth;
         } elseif ($type === 'lost_damaged') {
             $data['license_number'] = $request->license_number;
             $data['date_of_birth'] = $request->date_of_birth;
@@ -98,6 +94,19 @@ class DriverLicenseController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'A driver license with this full name and phone number already exists.'
+                ], 409);
+            }
+        }
+        
+        // Prevent duplicate license number for lost/damaged licenses
+        if ($type === 'lost_damaged' && $request->filled('license_number')) {
+            $exists = \App\Models\DriverLicense::where([
+                'license_number' => $request->license_number,
+            ])->where('status', '!=', 'rejected')->exists();
+            if ($exists) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'A driver license with this license number already exists.'
                 ], 409);
             }
         }
@@ -312,8 +321,6 @@ class DriverLicenseController extends Controller
                 'license_type' => $license->license_type,
                 'status' => $license->status,
                 'expired_license_upload' => $license->expired_license_upload ?? null,
-                'full_name' => $license->full_name,
-                'date_of_birth' => $license->date_of_birth,
                 'created_at' => $license->created_at,
                 'updated_at' => $license->updated_at,
             ];

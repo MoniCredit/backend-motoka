@@ -24,5 +24,22 @@ class DriverLicenseTransaction extends Model
     protected $casts = [
         'raw_response' => 'array',
         'meta_data' => 'array',
+        'driver_license_id' => 'string', // Cast to string for UUID
     ];
+
+    /**
+     * Get the driver license that owns the transaction.
+     */
+    public function driverLicense()
+    {
+        return $this->belongsTo(DriverLicense::class, 'driver_license_id');
+    }
+
+    /**
+     * Get the user that owns the transaction.
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 } 
