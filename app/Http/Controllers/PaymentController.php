@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
@@ -117,11 +118,35 @@ class PaymentController extends Controller
         $payload['customer']['nin'] = $user->nin;
     }
 
-    $response = Http::post(env('MONICREDIT_BASE_URL') . '/payment/transactions/init-transaction', $payload);
-    $data = $response->json();
+    // Check if MONICREDIT_BASE_URL is configured
+    $baseUrl = env('MONICREDIT_BASE_URL');
+    if (empty($baseUrl)) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Payment gateway configuration error. Please contact support.',
+            'error' => 'MONICREDIT_BASE_URL not configured'
+        ], 500);
+    }
+
+    try {
+        $response = Http::timeout(30)->post($baseUrl . '/payment/transactions/init-transaction', $payload);
+        $data = $response->json();
+    } catch (\Exception $e) {
+        // Log::error('Monicredit API error', [
+        //     'error' => $e->getMessage(),
+        //     'url' => $baseUrl . '/payment/transactions/init-transaction',
+        //     'payload' => $payload
+        // ]);
+        
+        return response()->json([
+            'status' => false,
+            'message' => 'Payment gateway connection error. Please try again later.',
+            'error' => $e->getMessage()
+        ], 500);
+    }
 
     // Log Monicredit response for debugging
-    \Log::info('Monicredit payment initiation response', ['response' => $data]);
+    // Log::info('Monicredit payment initiation response', ['response' => $data]);
 
     // If Monicredit returns a payment error (not just customer error), show it
     if (isset($data['status']) && $data['status'] === false && isset($data['message'])) {
@@ -159,97 +184,142 @@ class PaymentController extends Controller
 public function verifyPayment($transaction_id)
 {
     $user = Auth::user();
-    // dd($transaction_id);
-    // Call Monicredit verification API
-    $response = Http::post(env('MONICREDIT_BASE_URL') . "/payment/transactions/verify-transaction", [
-        'transaction_id' => $transaction_id,
-        'private_key' => env('MONICREDIT_PRIVATE_KEY')
-    ]);
+    
+    // EARLY ACCESS CONTROL: Check if user owns this transaction BEFORE making API call
+    $payment = Payment::where('transaction_id', $transaction_id)->first();
+    
+    if (!$payment) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Payment record not found'
+        ], 404);
+    }
+    
+    // Access control: Only allow user to verify their own payment
+    if ($payment->user_id !== $user->id && $payment->user_id !== $user->userId) {
+        // Log::warning('Unauthorized payment verification attempt', [
+        //     'user_id' => $user->id,
+        //     'user_userId' => $user->userId,
+        //     'payment_user_id' => $payment->user_id,
+        //     'transaction_id' => $transaction_id,
+        //     'ip' => request()->ip()
+        // ]);
+        
+        return response()->json([
+            'status' => false,
+            'message' => 'You are not authorized to verify this payment'
+        ], 403);
+    }
+    
+    // Check if MONICREDIT_BASE_URL is configured
+    $baseUrl = env('MONICREDIT_BASE_URL');
+    if (empty($baseUrl)) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Payment gateway configuration error. Please contact support.',
+            'error' => 'MONICREDIT_BASE_URL not configured'
+        ], 500);
+    }
 
-    if (!$response->ok()) {
-        return response()->json(['message' => 'Verification failed'], 500);
+    // Call Monicredit verification API
+    try {
+        $response = Http::timeout(30)->post($baseUrl . "/payment/transactions/verify-transaction", [
+            'transaction_id' => $transaction_id,
+            'private_key' => env('MONICREDIT_PRIVATE_KEY')
+        ]);
+
+        if (!$response->ok()) {
+            // Log::error('Monicredit API returned non-OK status', [
+            //     'status_code' => $response->status(),
+            //     'response' => $response->body(),
+            //     'transaction_id' => $transaction_id
+            // ]);
+            return response()->json([
+                'status' => false,
+                'message' => 'Payment verification failed'
+            ], 500);
+        }
+    } catch (\Exception $e) {
+        // Log::error('Monicredit verification API error', [
+        //     'error' => $e->getMessage(),
+        //     'url' => $baseUrl . "/payment/transactions/verify-transaction",
+        //     'transaction_id' => $transaction_id
+        // ]);
+        
+        return response()->json([
+            'status' => false,
+            'message' => 'Payment verification connection error. Please try again later.',
+            'error' => $e->getMessage()
+        ], 500);
     }
 
     $data = $response->json();
+    
+    // Log the response for debugging
+    // Log::info('Monicredit verification response', [
+    //     'transaction_id' => $transaction_id,
+    //     'response' => $data
+    // ]);
 
-    // Check payment status
-    if (isset($data['status']) && $data['status'] == true) {
-        // Find payment by order_id or reference_code
-        $payment = Payment::where('transaction_id', $data['orderid'])->first();
+    // Update payment status regardless of the result
+    $payment->update([
+        'status' => strtolower($data['data']['status'] ?? 'unknown'),
+        'raw_response' => $data
+    ]);
 
-        if (!$payment) {
-            return response()->json(['message' => 'Payment record not found'], 404);
-        }
-        // Access control: Only allow user to verify their own payment
-        if ($payment->user_id !== $user->id && $payment->user_id !== $user->userId) {
-            return response()->json([
-                'status' => false,
-                'message' => 'You are not the owner of this payment. Go hack somewhere else!'
-            ], 403);
-        }
-
-        // Update payment status
-        $payment->update([
-            'status' => strtolower($data['data']['status']),
-            'raw_response' => $data
-        ]);
+    // Check if payment is successful (approved or success)
+    if (isset($data['status']) && $data['status'] == true && 
+        (strtolower($data['data']['status'] ?? '') === 'approved' || 
+         strtolower($data['data']['status'] ?? '') === 'success')) {
 
         // If payment is successful and for a car, update car expiry and reminder
-        if (strtolower($data['data']['status']) === 'approved' || strtolower($data['data']['status']) === 'success') {
-            $car = \App\Models\Car::find($payment->car_id);
-            if ($car) {
-                // Remove auto-setting of date_issued and expiry_date
-                // $now = now();
-                // $oldExpiry = $car->expiry_date ? \Carbon\Carbon::parse($car->expiry_date) : $now;
-                // $newIssued = $oldExpiry->greaterThan($now) ? $oldExpiry : $now;
-                // $car->date_issued = $newIssued;
-                // $car->expiry_date = $newIssued->copy()->addYear();
-                $car->status = 'active';
-                $car->save();
+        $car = \App\Models\Car::find($payment->car_id);
+        if ($car) {
+            $car->status = 'active';
+            $car->save();
 
-                // Get the userId string from the user model
-                $userModel = \App\Models\User::find($payment->user_id);
-                $userIdString = $userModel ? $userModel->userId : null;
+            // Get the userId string from the user model
+            $userModel = \App\Models\User::find($payment->user_id);
+            $userIdString = $userModel ? $userModel->userId : null;
 
-                if ($userIdString) {
-                    $reminderDate = \Carbon\Carbon::parse($car->expiry_date)->startOfDay();
-                    $nowDay = \Carbon\Carbon::now()->startOfDay();
-                    $daysLeft = $nowDay->diffInDays($reminderDate, false);
+            if ($userIdString) {
+                $reminderDate = \Carbon\Carbon::parse($car->expiry_date)->startOfDay();
+                $nowDay = \Carbon\Carbon::now()->startOfDay();
+                $daysLeft = $nowDay->diffInDays($reminderDate, false);
 
-                    if ($daysLeft > 30) {
-                        \App\Models\Reminder::where('user_id', $userIdString)
-                            ->where('type', 'car')
-                            ->where('ref_id', $car->id)
-                            ->delete();
-                    } else if ($daysLeft < 0) {
-                        $message = 'License Expired.';
-                        \App\Models\Reminder::updateOrCreate(
-                            [
-                                'user_id' => $userIdString,
-                                'type' => 'car',
-                                'ref_id' => $car->id,
-                            ],
-                            [
-                                'message' => $message,
-                                'remind_at' => $nowDay->format('Y-m-d H:i:s'),
-                                'is_sent' => false
-                            ]
-                        );
-                    } else if ($daysLeft === 0) {
-                        $message = 'Your car registration expires today! Please renew now.';
-                        \App\Models\Reminder::updateOrCreate(
-                            [
-                                'user_id' => $userIdString,
-                                'type' => 'car',
-                                'ref_id' => $car->id,
-                            ],
-                            [
-                                'message' => $message,
-                                'remind_at' => $nowDay->format('Y-m-d H:i:s'),
-                                'is_sent' => false
-                            ]
-                        );
-                    }
+                if ($daysLeft > 30) {
+                    \App\Models\Reminder::where('user_id', $userIdString)
+                        ->where('type', 'car')
+                        ->where('ref_id', $car->id)
+                        ->delete();
+                } else if ($daysLeft < 0) {
+                    $message = 'License Expired.';
+                    \App\Models\Reminder::updateOrCreate(
+                        [
+                            'user_id' => $userIdString,
+                            'type' => 'car',
+                            'ref_id' => $car->id,
+                        ],
+                        [
+                            'message' => $message,
+                            'remind_at' => $nowDay->format('Y-m-d H:i:s'),
+                            'is_sent' => false
+                        ]
+                    );
+                } else if ($daysLeft === 0) {
+                    $message = 'Your car registration expires today! Please renew now.';
+                    \App\Models\Reminder::updateOrCreate(
+                        [
+                            'user_id' => $userIdString,
+                            'type' => 'car',
+                            'ref_id' => $car->id,
+                        ],
+                        [
+                            'message' => $message,
+                            'remind_at' => $nowDay->format('Y-m-d H:i:s'),
+                            'is_sent' => false
+                        ]
+                    );
                 }
             }
         }
@@ -263,6 +333,7 @@ public function verifyPayment($transaction_id)
         ]);
     }
 
+    // Payment not successful or still pending
     return response()->json([
         'message' => 'Payment not successful',
         'data' => $data
@@ -278,11 +349,11 @@ public function getWalletInfo(Request $request)
         'Authorization' => 'Bearer ' . $privateKey,
     ];
 
-    $response = \Http::withHeaders($headers)
+    $response = Http::withHeaders($headers)
         ->get(env('MONICREDIT_BASE_URL') . '/banking/wallet/account');
 
     $data = $response->json();
-    \Log::info('Monicredit wallet list response', ['response' => $data]);
+    // Log::info('Monicredit wallet list response', ['response' => $data]);
 
     // If Monicredit did not return a successful response, show the error message
     if (!(isset($data['status']) && $data['status'] === true) && !(isset($data['success']) && $data['success'] === true)) {
@@ -344,6 +415,39 @@ public function getCarPaymentReceipt(Request $request, $car_id)
         'status' => true,
         'message' => 'Payment receipt found.',
         'payment' => $payment,
+        'monicredit_response' => $payment->raw_response
+    ]);
+}
+
+public function getPaymentReceipt(Request $request, $payment_id)
+{
+    $user = Auth::user();
+    
+    // Find payment by UUID
+    $payment = \App\Models\Payment::find($payment_id);
+    if (!$payment) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Payment not found.'
+        ], 404);
+    }
+    
+    // Check if user owns this payment
+    if ($payment->user_id !== $user->id && $payment->user_id !== $user->userId) {
+        return response()->json([
+            'status' => false,
+            'message' => 'You are not authorized to view this payment receipt.'
+        ], 403);
+    }
+    
+    // Get car details
+    $car = $payment->car;
+    
+    return response()->json([
+        'status' => true,
+        'message' => 'Payment receipt found.',
+        'payment' => $payment,
+        'car' => $car,
         'monicredit_response' => $payment->raw_response
     ]);
 }
