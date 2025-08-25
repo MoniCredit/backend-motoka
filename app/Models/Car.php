@@ -5,25 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Support\Str;
 
 class Car extends Model
 {
-    use HasFactory, SoftDeletes, HasUuids;
-
-    /**
-     * The data type of the auto-incrementing ID.
-     *
-     * @var string
-     */
-    protected $keyType = 'string';
-
-    /**
-     * Indicates if the IDs are auto-incrementing.
-     *
-     * @var bool
-     */
-    public $incrementing = false;
+    use HasFactory, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -83,6 +69,20 @@ class Car extends Model
         'document_images' => 'array',
         'expiry_date' => 'date',
     ];
+
+    /**
+     * Boot the model and add event listeners
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($car) {
+            if (empty($car->slug)) {
+                $car->slug = Str::uuid();
+            }
+        });
+    }
 
     public function user()
     {

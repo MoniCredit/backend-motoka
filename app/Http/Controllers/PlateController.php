@@ -204,10 +204,10 @@ class PlateController extends Controller
     /**
      * Get plate application details
      */
-    public function show($id)
+    public function show($slug)
     {
         $userId = Auth::user()->userId;
-        $car = Car::where('id', $id)
+        $car = Car::where('slug', $slug)
             ->where('user_id', $userId)
             ->where('registration_status', 'unregistered')
             ->first();

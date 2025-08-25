@@ -44,13 +44,13 @@ Route::controller(AuthController::class)->group(function () {
         Route::prefix('licenses')->group(function () {
             Route::post('/apply', [DriverLicenseController::class, 'store']); // Apply for license
             Route::get('/', [DriverLicenseController::class, 'index']);       // List all licenses
-            Route::get('/{id}', [DriverLicenseController::class, 'show']);    // Get a single license
+            Route::get('/{slug}', [DriverLicenseController::class, 'show']);    // Get a single license
         });
 
         Route::prefix('plate-number')->group(function () {
             Route::post('/apply', [PlateController::class, 'store']); // Apply for plate
             Route::get('/', [PlateController::class, 'index']);       // List all plate applications
-            Route::get('/{id}', [PlateController::class, 'show']);    // Get a single plate application
+            Route::get('/{slug}', [PlateController::class, 'show']);    // Get a single plate application
             Route::get('/types', [PlateController::class, 'getPlateTypes']); // Get available plate types
         });
 
@@ -70,9 +70,9 @@ Route::controller(AuthController::class)->group(function () {
         // });
         Route::post('reg-car', [CarController::class, 'register']);
         Route::get('get-cars/', [CarController::class, 'getMyCars']);
-        Route::get('cars/{id}', [CarController::class, 'show']);
-        Route::put('cars/{id}', [CarController::class, 'update']);
-        Route::delete('cars/{id}', [CarController::class, 'destroy']);
+        Route::get('cars/{slug}', [CarController::class, 'show']);
+        Route::put('cars/{slug}', [CarController::class, 'update']);
+        Route::delete('cars/{slug}', [CarController::class, 'destroy']);
         Route::post('cars/{car_id}/add-plate', [CarController::class, 'addPlateToUnregisteredCar']);
         Route::post('initiate', [CarController::class, 'InsertDetail']);
         Route::post('verify', [CarController::class, 'Verification']);
@@ -93,10 +93,10 @@ Route::controller(AuthController::class)->group(function () {
         Route::middleware('auth:sanctum')->prefix('payment')->group(function () {
             Route::post('/initialize', [PaymentController::class, 'initializePayment']);
             Route::post('/verify-payment/{transaction_id}', [PaymentController::class, 'verifyPayment']);
-            Route::get('/car-receipt/{car_id}', [PaymentController::class, 'getCarPaymentReceipt']);
-            Route::get('/receipt/{payment_id}', [PaymentController::class, 'getPaymentReceipt']);
+            Route::get('/car-receipt/{car_slug}', [PaymentController::class, 'getCarPaymentReceipt']);
+            Route::get('/receipt/{payment_slug}', [PaymentController::class, 'getPaymentReceipt']);
             Route::get('/wallet', [PaymentController::class, 'getWalletInfo']);
-            Route::delete('/receipt/{payment_id}', [PaymentController::class, 'deleteReceipt']);
+            Route::delete('/receipt/{payment_slug}', [PaymentController::class, 'deleteReceipt']);
             Route::get('/transactions', [PaymentController::class, 'listUserTransactions']);
             Route::get('/all-receipts', [PaymentController::class, 'getAllReceipts']);
         });
@@ -133,11 +133,11 @@ Route::controller(AuthController::class)->group(function () {
         // Driver license CRUD and payment endpoints
         Route::post('/driver-license', [\App\Http\Controllers\DriverLicenseController::class, 'store']);
         Route::get('/driver-license', [\App\Http\Controllers\DriverLicenseController::class, 'index']);
-        Route::post('/driver-license/{id}/initialize-payment', [\App\Http\Controllers\DriverLicenseController::class, 'initializePaymentForLicense']);
-        Route::post('/driver-license/{id}/verify-payment', [\App\Http\Controllers\DriverLicenseController::class, 'verifyPaymentForLicense']);
-        Route::get('/driver-license/{id}/receipt', [\App\Http\Controllers\DriverLicenseController::class, 'getDriverLicenseReceipt']);
-        Route::put('/driver-license/{id}', [\App\Http\Controllers\DriverLicenseController::class, 'update']);
-        Route::delete('/driver-license/{id}', [\App\Http\Controllers\DriverLicenseController::class, 'destroy']);
+        Route::post('/driver-license/{slug}/initialize-payment', [\App\Http\Controllers\DriverLicenseController::class, 'initializePaymentForLicense']);
+        Route::post('/driver-license/{slug}/verify-payment', [\App\Http\Controllers\DriverLicenseController::class, 'verifyPaymentForLicense']);
+        Route::get('/driver-license/{slug}/receipt', [\App\Http\Controllers\DriverLicenseController::class, 'getDriverLicenseReceipt']);
+        Route::put('/driver-license/{slug}', [\App\Http\Controllers\DriverLicenseController::class, 'update']);
+        Route::delete('/driver-license/{slug}', [\App\Http\Controllers\DriverLicenseController::class, 'destroy']);
 
 
         Route::get('/driver-license/receipts', [\App\Http\Controllers\DriverLicenseController::class, 'listAllDriverLicenseReceipts']);
@@ -200,7 +200,7 @@ Route::get('/get-expiration', function () {
 
         if ($expiration->greaterThan(Carbon::now())) {
             $mtd[] = [
-                'car_id' => $car->id,
+                'car_slug' => $car->slug,
                 'expiration_date' => $expiration->toDateTimeString(), // format as 'Y-m-d H:i:s'
                 'days_until_expiration' => Carbon::now()->diffInDays($expiration),
                 'expires_in' => Carbon::now()->diffForHumans($expiration, [

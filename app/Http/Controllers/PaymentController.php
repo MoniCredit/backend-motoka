@@ -18,13 +18,25 @@ class PaymentController extends Controller
     $user = Auth::user();
     $transaction_id = Str::random(10);
 
+    // Validation: car_slug is required
     $request->validate([
-        'car_id' => 'required|exists:cars,id',
+        'car_slug' => 'required|exists:cars,slug',
         'payment_schedule_id' => 'required|exists:payment_schedules,id',
         'meta_data' => 'nullable|array',
     ]);
 
-    $car = \App\Models\Car::find($request->car_id);
+    // Resolve car strictly by slug
+    $car = \App\Models\Car::where('slug', $request->car_slug)->first();
+
+    if (!$car) {
+        return response()->json([
+            'message' => 'The selected car is invalid.',
+            'errors' => [
+                'car_slug' => ['The selected car is invalid.']
+            ]
+        ], 422);
+    }
+
     $getPaymentSchedule = PaymentSchedule::with(['payment_head', 'revenue_head'])->find($request->payment_schedule_id);
     if (!$getPaymentSchedule) {
         return response()->json(['message' => 'Invalid payment_schedule_id'], 400);
@@ -132,21 +144,12 @@ class PaymentController extends Controller
         $response = Http::timeout(30)->post($baseUrl . '/payment/transactions/init-transaction', $payload);
         $data = $response->json();
     } catch (\Exception $e) {
-        // Log::error('Monicredit API error', [
-        //     'error' => $e->getMessage(),
-        //     'url' => $baseUrl . '/payment/transactions/init-transaction',
-        //     'payload' => $payload
-        // ]);
-        
         return response()->json([
             'status' => false,
             'message' => 'Payment gateway connection error. Please try again later.',
             'error' => $e->getMessage()
         ], 500);
     }
-
-    // Log Monicredit response for debugging
-    // Log::info('Monicredit payment initiation response', ['response' => $data]);
 
     // If Monicredit returns a payment error (not just customer error), show it
     if (isset($data['status']) && $data['status'] === false && isset($data['message'])) {
@@ -175,7 +178,7 @@ class PaymentController extends Controller
         'message' => 'Payment initialized successfully',
         'data' => $data,
         'car' => $car,
-        'payment' => $save,
+        'payment' => $this->formatPayment($save),
         'meta_data' => $parsedMetaData,
         'delivery_fee' => $deliveryFee
     ]);
@@ -329,7 +332,7 @@ public function verifyPayment($transaction_id)
             'data' => $data,
             'payment_date' => $payment->created_at,
             'car' => $car,
-            'payment' => $payment
+            'payment' => $this->formatPayment($payment)
         ]);
     }
 
@@ -385,10 +388,10 @@ public function getWalletInfo(Request $request)
     ]);
 }
 
-public function getCarPaymentReceipt(Request $request, $car_id)
+public function getCarPaymentReceipt(Request $request, $car_slug)
 {
     $user = Auth::user();
-    $car = \App\Models\Car::find($car_id);
+    $car = \App\Models\Car::where('slug', $car_slug)->first();
     if (!$car) {
         return response()->json([
             'status' => false,
@@ -401,7 +404,7 @@ public function getCarPaymentReceipt(Request $request, $car_id)
             'message' => 'This is not your car, hacker! Access denied.'
         ], 403);
     }
-    $payment = \App\Models\Payment::where('car_id', $car_id)
+    $payment = \App\Models\Payment::where('car_id', $car->id)
         ->where('user_id', $user->id)
         ->orderBy('created_at', 'desc')
         ->first();
@@ -414,17 +417,17 @@ public function getCarPaymentReceipt(Request $request, $car_id)
     return response()->json([
         'status' => true,
         'message' => 'Payment receipt found.',
-        'payment' => $payment,
+        'payment' => $this->formatPayment($payment),
         'monicredit_response' => $payment->raw_response
     ]);
 }
 
-public function getPaymentReceipt(Request $request, $payment_id)
+public function getPaymentReceipt(Request $request, $payment_slug)
 {
     $user = Auth::user();
     
     // Find payment by UUID
-    $payment = \App\Models\Payment::find($payment_id);
+    $payment = \App\Models\Payment::where('slug', $payment_slug)->first();
     if (!$payment) {
         return response()->json([
             'status' => false,
@@ -446,7 +449,7 @@ public function getPaymentReceipt(Request $request, $payment_id)
     return response()->json([
         'status' => true,
         'message' => 'Payment receipt found.',
-        'payment' => $payment,
+        'payment' => $this->formatPayment($payment),
         'car' => $car,
         'monicredit_response' => $payment->raw_response
     ]);
@@ -463,19 +466,23 @@ public function getAllReceipts(Request $request)
     $transactions = \App\Models\Payment::with(['car', 'paymentSchedule.payment_head', 'paymentSchedule.revenue_head', 'paymentSchedule.gateway', 'paymentSchedule.revenue_head.bank'])
         ->whereIn('car_id', $carIds)
         ->orderBy('created_at', 'desc')
-        ->get();
+        ->paginate(10);
 
-    $safeReceipts = $transactions->map(function($payment) {
-        // Only expose safe fields
-        $safe = [
-            'id' => $payment->id,
+    $current = $transactions->currentPage();
+    $perPage = $transactions->perPage();
+
+    $receipts = $transactions->getCollection()->values()->map(function($payment, $index) use ($current, $perPage) {
+        $numericId = ($current - 1) * $perPage + ($index + 1);
+        return [
+            'id' => $numericId,
+            'slug' => $payment->slug,
             'transaction_id' => $payment->transaction_id,
             'amount' => $payment->amount,
             'status' => $payment->status,
             'payment_description' => $payment->payment_description,
             'created_at' => $payment->created_at,
             'car' => [
-                'id' => $payment->car->id ?? null,
+                'slug' => $payment->car->slug ?? null,
                 'name_of_owner' => $payment->car->name_of_owner ?? null,
                 'vehicle_make' => $payment->car->vehicle_make ?? null,
                 'vehicle_model' => $payment->car->vehicle_model ?? null,
@@ -500,19 +507,24 @@ public function getAllReceipts(Request $request)
                 ] : null,
             ],
         ];
-        return $safe;
     });
 
     return response()->json([
         'status' => true,
-        'receipts' => $safeReceipts
+        'receipts' => $receipts,
+        'pagination' => [
+            'current_page' => $transactions->currentPage(),
+            'per_page' => $transactions->perPage(),
+            'total' => $transactions->total(),
+            'last_page' => $transactions->lastPage(),
+        ]
     ]);
 }
 
-public function deleteReceipt(Request $request, $payment_id)
+public function deleteReceipt(Request $request, $payment_slug)
 {
     $user = Auth::user();
-    $payment = \App\Models\Payment::find($payment_id);
+    $payment = \App\Models\Payment::where('slug', $payment_slug)->first();
     if (!$payment) {
         return response()->json([
             'status' => false,
@@ -589,16 +601,61 @@ public function listUserTransactions(Request $request)
     $carIds = \App\Models\Car::whereIn('user_id', $userIds)->pluck('id');
     $transactions = \App\Models\Payment::whereIn('car_id', $carIds)
         ->orderBy('created_at', 'desc')
-        ->get();
+        ->paginate(10);
+
+    $current = $transactions->currentPage();
+    $perPage = $transactions->perPage();
+
+    $items = $transactions->getCollection()->values()->map(function($p, $index) use ($current, $perPage) {
+        $numericId = ($current - 1) * $perPage + ($index + 1);
+        return [
+            'id' => $numericId,
+            'slug' => $p->slug,
+            'transaction_id' => $p->transaction_id,
+            'amount' => $p->amount,
+            'payment_schedule_id' => $p->payment_schedule_id,
+            'car_id' => $p->car_id,
+            'status' => $p->status,
+            'reference_code' => $p->reference_code,
+            'payment_description' => $p->payment_description,
+            'user_id' => $p->user_id,
+            'raw_response' => $p->raw_response,
+            'meta_data' => $p->meta_data,
+            'created_at' => $p->created_at,
+            'updated_at' => $p->updated_at,
+        ];
+    });
 
     return response()->json([
         'status' => true,
-        'transactions' => $transactions
+        'transactions' => $items,
+        'pagination' => [
+            'current_page' => $transactions->currentPage(),
+            'per_page' => $transactions->perPage(),
+            'total' => $transactions->total(),
+            'last_page' => $transactions->lastPage(),
+        ]
     ]);
 }
 
+private function formatPayment(Payment $payment)
+{
+    return [
+        // 'id' omitted (UUID). Use slug + pagination where needed
+        'slug' => $payment->slug,
+        'transaction_id' => $payment->transaction_id,
+        'amount' => $payment->amount,
+        'payment_schedule_id' => $payment->payment_schedule_id,
+        'car_id' => $payment->car_id,
+        'status' => $payment->status,
+        'reference_code' => $payment->reference_code,
+        'payment_description' => $payment->payment_description,
+        'user_id' => $payment->user_id,
+        'raw_response' => $payment->raw_response,
+        'meta_data' => $payment->meta_data,
+        'created_at' => $payment->created_at,
+        'updated_at' => $payment->updated_at,
+    ];
+}
 
-
-
-  
 }

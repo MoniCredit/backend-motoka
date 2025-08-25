@@ -258,9 +258,9 @@ class CarController extends Controller
     /**
      * Get specific car details
      */
-    public function show($id)
+    public function show($slug)
     {
-        $car = Car::find($id);
+        $car = Car::where('slug', $slug)->first();
         if (!$car) {
             return response()->json([
                 'status' => 'error',
@@ -289,9 +289,9 @@ class CarController extends Controller
     /**
      * Update car details
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, $slug)
     {
-        $car = Car::find($id);
+        $car = Car::where('slug', $slug)->first();
         if (!$car) {
             return response()->json([
                 'status' => 'error',
@@ -371,10 +371,10 @@ class CarController extends Controller
      */
    
 
-    public function destroy($id)
+    public function destroy($slug)
     {
         $userId = Auth::user()->userId;
-        $car = Car::find($id);
+        $car = Car::where('slug', $slug)->first();
         if (!$car) {
             return response()->json([
                 'status' => 'error',
@@ -396,7 +396,7 @@ class CarController extends Controller
         $car->delete();
         // Delete associated reminders
         Reminder::where('user_id', $userId)
-            ->where('ref_id', $id) // Assuming ref_id is the car ID
+            ->where('ref_id', $car->id) // Use car->id for the ref_id
             ->delete();
         // Optional: record a notification
         Notification::create([
@@ -618,7 +618,7 @@ public function getLgaByState($state_id)
     public function addPlateToUnregisteredCar(Request $request, $car_id)
     {
         $userId = Auth::user()->userId;
-        $car = Car::where('id', $car_id)->where('user_id', $userId)->where('registration_status', 'unregistered')->first();
+        $car = Car::where('slug', $car_id)->where('user_id', $userId)->where('registration_status', 'unregistered')->first();
         if (!$car) {
             return response()->json(['status' => 'error', 'message' => 'Unregistered car not found'], 404);
         }
