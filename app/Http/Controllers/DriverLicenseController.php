@@ -39,13 +39,11 @@ class DriverLicenseController extends Controller
                 'next_of_kin_phone' => 'required|string',
                 'mother_maiden_name' => 'required|string',
                 'license_year' => 'required|integer',
-                'passport_photograph' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+                'passport_photograph' => 'required|image|mimes:jpeg,png,jpg|max:10240',
             ]);
         } elseif ($type === 'renew') {
             $rules = array_merge($baseRules, [
                 'expired_license_upload' => 'required|file|mimes:jpeg,png,jpg,pdf',
-                'full_name' => 'nullable|string',
-                'date_of_birth' => 'nullable|date',
             ]);
         } elseif ($type === 'lost_damaged') {
             $rules = array_merge($baseRules, [
@@ -81,8 +79,6 @@ class DriverLicenseController extends Controller
                 $request->file('expired_license_upload')->move(public_path('images/expired-licenses'), $filename);
                 $data['expired_license_upload'] = 'images/expired-licenses/' . $filename;
             }
-            $data['full_name'] = $request->full_name;
-            $data['date_of_birth'] = $request->date_of_birth;
         } elseif ($type === 'lost_damaged') {
             $data['license_number'] = $request->license_number;
             $data['date_of_birth'] = $request->date_of_birth;
@@ -101,6 +97,19 @@ class DriverLicenseController extends Controller
                 ], 409);
             }
         }
+        
+        // Prevent duplicate license number for lost/damaged licenses
+        if ($type === 'lost_damaged' && $request->filled('license_number')) {
+            $exists = \App\Models\DriverLicense::where([
+                'license_number' => $request->license_number,
+            ])->where('status', '!=', 'rejected')->exists();
+            if ($exists) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'A driver license with this license number already exists.'
+                ], 409);
+            }
+        }
         $license = \App\Models\DriverLicense::create($data);
         return response()->json([
             'status' => 'success',
@@ -112,17 +121,41 @@ class DriverLicenseController extends Controller
     public function index()
     {
         $userId = Auth::user()->userId;
-        $licenses = \App\Models\DriverLicense::where('user_id', $userId)->get();
+        $licenses = \App\Models\DriverLicense::where('user_id', $userId)
+            ->orderByDesc('created_at')
+            ->paginate(10);
+
+        $current = $licenses->currentPage();
+        $perPage = $licenses->perPage();
+
+        $items = $licenses->getCollection()->values()->map(function($license, $index) use ($current, $perPage) {
+            // Backfill missing slug
+            if (empty($license->slug)) {
+                $license->slug = (string) Str::uuid();
+                $license->save();
+            }
+            $data = $this->filterLicenseResponse($license);
+            // Add numeric id for pagination display
+            $data['id'] = ($current - 1) * $perPage + ($index + 1);
+            return $data;
+        });
+
         return response()->json([
             'status' => 'success',
-            'data' => $licenses->map(fn($license) => $this->filterLicenseResponse($license))
+            'data' => $items,
+            'pagination' => [
+                'current_page' => $licenses->currentPage(),
+                'per_page' => $licenses->perPage(),
+                'total' => $licenses->total(),
+                'last_page' => $licenses->lastPage(),
+            ],
         ]);
     }
 
     // Initialize payment for a specific driver license (Monicredit integration)
-    public function initializePaymentForLicense(Request $request, $id)
+    public function initializePaymentForLicense(Request $request, $slug)
     {
-        $license = \App\Models\DriverLicense::find($id);
+        $license = \App\Models\DriverLicense::where('slug', $slug)->first();
         if (!$license || $license->user_id !== Auth::user()->userId) {
             return response()->json(['status' => 'error', 'message' => 'License not found'], 404);
         }
@@ -204,12 +237,12 @@ class DriverLicenseController extends Controller
     }
 
     // Verify payment for a specific license (Monicredit integration)
-    public function verifyPaymentForLicense(Request $request, $id)
+    public function verifyPaymentForLicense(Request $request, $slug)
     {
         $user = Auth::user();
         
         // EARLY ACCESS CONTROL: Check if user owns this license BEFORE making API call
-        $license = \App\Models\DriverLicense::where('id', $id)
+        $license = \App\Models\DriverLicense::where('slug', $slug)
             ->where('user_id', $user->userId)
             ->first();
             
@@ -217,7 +250,7 @@ class DriverLicenseController extends Controller
             Log::warning('Unauthorized license verification attempt', [
                 'user_id' => $user->id,
                 'user_userId' => $user->userId,
-                'license_id' => $id,
+                'license_id' => $slug,
                 'ip' => request()->ip()
             ]);
             
@@ -288,10 +321,10 @@ class DriverLicenseController extends Controller
         ]);
     }
 
-    public function show($id)
+    public function show($slug)
     {
         $userId= Auth::user()->userId;
-        $license = DriverLicense::where(['id'=>$id,'user_id'=>$userId])->first();
+        $license = DriverLicense::where(['slug'=>$slug,'user_id'=>$userId])->first();
         if ($license) {
             return response()->json(["status"=> true, "data" => $this->filterLicenseResponse($license)], 200);
         }
@@ -307,20 +340,18 @@ class DriverLicenseController extends Controller
         if ($license->license_type === 'renew') {
             // Only show fields relevant to renew
             return [
-                'id' => $license->id,
+                'slug' => $license->slug,
                 'user_id' => $license->user_id,
                 'license_type' => $license->license_type,
                 'status' => $license->status,
                 'expired_license_upload' => $license->expired_license_upload ?? null,
-                'full_name' => $license->full_name,
-                'date_of_birth' => $license->date_of_birth,
                 'created_at' => $license->created_at,
                 'updated_at' => $license->updated_at,
             ];
         } elseif ($license->license_type === 'lost_damaged') {
             // Only show fields relevant to lost/damaged
             return [
-                'id' => $license->id,
+                'slug' => $license->slug,
                 'user_id' => $license->user_id,
                 'license_type' => $license->license_type,
                 'status' => $license->status,
@@ -332,7 +363,7 @@ class DriverLicenseController extends Controller
         } elseif ($license->license_type === 'new') {
             // Only show fields relevant to new
             return [
-                'id' => $license->id,
+                'slug' => $license->slug,
                 'user_id' => $license->user_id,
                 'license_type' => $license->license_type,
                 'status' => $license->status,
@@ -397,14 +428,14 @@ class DriverLicenseController extends Controller
     public function getDriverLicenseReceipt(Request $request, $license_id)
     {
         $user = Auth::user();
-        $license = \App\Models\DriverLicense::find($license_id);
+        $license = \App\Models\DriverLicense::where('slug', $license_id)->first();
         if (!$license || $license->user_id !== $user->userId) {
             return response()->json([
                 'status' => false,
                 'message' => 'License not found.'
             ], 404);
         }
-        $txn = DriverLicenseTransaction::where('driver_license_id', $license_id)
+        $txn = DriverLicenseTransaction::where('driver_license_id', $license->id)
             ->where('user_id', $user->id)
             ->orderBy('created_at', 'desc')
             ->first();
@@ -438,30 +469,47 @@ class DriverLicenseController extends Controller
         $user = Auth::user();
         $transactions = \App\Models\DriverLicenseTransaction::where('user_id', $user->id)
             ->orderBy('created_at', 'desc')
-            ->get();
-        $receipts = $transactions->map(function($txn) {
+            ->paginate(10);
+
+        $current = $transactions->currentPage();
+        $perPage = $transactions->perPage();
+
+        $receipts = $transactions->getCollection()->values()->map(function($txn, $index) use ($current, $perPage) {
+            // Fetch license slug for this transaction
+            $license = DriverLicense::find($txn->driver_license_id);
+            $licenseSlug = $license ? ($license->slug ?: null) : null;
+            // Ensure we return a UUID-like slug for the receipt; generate if missing in the row (response only)
+            $receiptSlug = property_exists($txn, 'slug') && !empty($txn->slug) ? (string) $txn->slug : (string) Str::uuid();
             return [
-                'id' => $txn->id,
+                'id' => ($current - 1) * $perPage + ($index + 1),
+                'slug' => $receiptSlug,
                 'transaction_id' => $txn->transaction_id,
                 'amount' => $txn->amount,
                 'status' => $txn->status,
                 'payment_description' => $txn->payment_description,
                 'created_at' => $txn->created_at,
-                'driver_license_id' => $txn->driver_license_id,
+                'driver_license_slug' => $licenseSlug,
                 'raw_response' => $txn->raw_response,
             ];
         });
+
         return response()->json([
             'status' => true,
-            'receipts' => $receipts
+            'receipts' => $receipts,
+            'pagination' => [
+                'current_page' => $transactions->currentPage(),
+                'per_page' => $transactions->perPage(),
+                'total' => $transactions->total(),
+                'last_page' => $transactions->lastPage(),
+            ]
         ]);
     }
 
     // Update a driver license (only if status is unpaid or rejected)
-    public function update(Request $request, $id)
+    public function update(Request $request, $slug)
     {
         $userId = Auth::user()->userId;
-        $license = \App\Models\DriverLicense::where('id', $id)->where('user_id', $userId)->first();
+        $license = \App\Models\DriverLicense::where('slug', $slug)->where('user_id', $userId)->first();
         if (!$license) {
             return response()->json(['status' => 'error', 'message' => 'License not found'], 404);
         }
@@ -486,10 +534,10 @@ class DriverLicenseController extends Controller
     }
 
     // Delete a driver license (only if status is unpaid or rejected)
-    public function destroy($id)
+    public function destroy($slug)
     {
         $userId = Auth::user()->userId;
-        $license = \App\Models\DriverLicense::where('id', $id)->where('user_id', $userId)->first();
+        $license = \App\Models\DriverLicense::where('slug', $slug)->where('user_id', $userId)->first();
         if (!$license) {
             return response()->json(['status' => 'error', 'message' => 'License not found'], 404);
         }

@@ -48,7 +48,7 @@ class ReminderController extends Controller
                 if ($daysLeft <= 30) { // Only show reminders for cars expiring in 30 days or less
                     $response[] = [
                         'reminder_id' => $reminder->id,
-                        'car_id' => $carId,
+                        'car_slug' => $car->slug,
                         'car_details' => [
                             'name_of_owner' => $car->name_of_owner,
                             'vehicle_make' => $car->vehicle_make,
