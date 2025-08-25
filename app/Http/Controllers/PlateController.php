@@ -27,23 +27,23 @@ class PlateController extends Controller
         $baseRules = [
             'type' => 'required|in:Normal,Customized,Dealership',
             'preferred_name' => 'nullable|string|max:255',
-            'cac_document' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
-            'letterhead' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
-            'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'cac_document' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:10240',
+            'letterhead' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:10240',
+            'means_of_identification' => 'nullable|file|mimes:pdf,jpg,png,jpeg|max:10240',
         ];
 
         // Additional rules for dealership type (only files required for add-plate, full details for new application)
         $dealershipRules = [
             'business_type' => 'required|in:Co-operate,Business',
-            'cac_document' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
-            'letterhead' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
-            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'cac_document' => 'required|file|mimes:pdf,jpg,png,jpeg|max:10240',
+            'letterhead' => 'required|file|mimes:pdf,jpg,png,jpeg|max:10240',
+            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:10240',
         ];
 
         // Additional rules for customized type
         $customizedRules = [
             'preferred_name' => 'required|string|max:255',
-            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:2048',
+            'means_of_identification' => 'required|file|mimes:pdf,jpg,png,jpeg|max:10240',
         ];
 
         // Initialize rules based on type
@@ -204,10 +204,10 @@ class PlateController extends Controller
     /**
      * Get plate application details
      */
-    public function show($id)
+    public function show($slug)
     {
         $userId = Auth::user()->userId;
-        $car = Car::where('id', $id)
+        $car = Car::where('slug', $slug)
             ->where('user_id', $userId)
             ->where('registration_status', 'unregistered')
             ->first();

@@ -4,23 +4,16 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Support\Str;
 
 class Payment extends Model
 {
     use HasUuids;
 
     /**
-     * The data type of the auto-incrementing ID.
-     *
-     * @var string
+     * The primary key is a UUID string.
      */
     protected $keyType = 'string';
-
-    /**
-     * Indicates if the IDs are auto-incrementing.
-     *
-     * @var bool
-     */
     public $incrementing = false;
 
     protected $guarded = [];
@@ -28,6 +21,24 @@ class Payment extends Model
     protected $casts = [
         'raw_response' => 'array',
     ];
+
+    /**
+     * Boot the model and add event listeners
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($payment) {
+            // ensure id and slug exist
+            if (empty($payment->id)) {
+                $payment->id = (string) Str::uuid();
+            }
+            if (empty($payment->slug)) {
+                $payment->slug = (string) Str::uuid();
+            }
+        });
+    }
 
     public function car()
     {

@@ -65,7 +65,7 @@ class ProfileController extends Controller
                     $fail('The gender must be Male, Female, or Other.');
                 }
             }],
-            'image' => 'sometimes|nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'image' => 'sometimes|nullable|image|mimes:jpeg,png,jpg,gif|max:10240',
         ]);
 
         $data = $request->only(['name', 'email', 'address']);
