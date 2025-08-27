@@ -36,11 +36,37 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email',
-            'phone_number' => 'nullable|string|unique:users,phone_number',
-            'password' => 'required|string|min:6|confirmed',
-            'nin' => 'nullable|string',
+            'name' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z\s\'-]+$/'], // Allows letters, spaces, hyphens, and apostrophes
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', 'regex:/^[^<>]*$/'], // Disallow < and > for XSS
+            'phone_number' => ['nullable', 'string', 'unique:users,phone_number', 'regex:/^[0-9\-\(\)\s\+]+$/'], // Allows digits, hyphens, parentheses, spaces, plus sign
+            'password' => ['required', 'string', 'min:8', 'confirmed', 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/'],
+            'nin' => ['nullable', 'string', 'regex:/^[a-zA-Z0-9]+$/'], // Only alphanumeric for NIN, adjust regex if a specific format is known
+        ],
+        [
+            'name.required' => 'The name field is required.',
+            'name.string' => 'The name must be a string.',
+            'name.max' => 'The name may not be greater than 255 characters.',
+            'name.regex' => 'The name can only contain letters, spaces, hyphens, and apostrophes.',
+            
+            'email.required' => 'The email field is required.',
+            'email.string' => 'The email must be a string.',
+            'email.email' => 'The email must be a valid email address.',
+            'email.max' => 'The email may not be greater than 255 characters.',
+            'email.unique' => 'This email is already registered.',
+            'email.regex' => 'The email contains invalid characters. Please avoid < and >.',
+
+            'phone_number.string' => 'The phone number must be a string.',
+            'phone_number.unique' => 'This phone number is already registered.',
+            'phone_number.regex' => 'The phone number format is invalid. Allowed characters are digits, hyphens, parentheses, spaces, and the plus sign.',
+
+            'password.required' => 'The password field is required.',
+            'password.string' => 'The password must be a string.',
+            'password.min' => 'The password must be at least 8 characters.',
+            'password.confirmed' => 'The password confirmation does not match.',
+            'password.regex' => 'The password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character (e.g., @$!%*?&).',
+            
+            'nin.string' => 'The NIN must be a string.',
+            'nin.regex' => 'The NIN can only contain alphanumeric characters.',
         ]);
 
         // Custom message for either email or phone required
