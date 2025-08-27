@@ -824,7 +824,7 @@ public function getLgaByState($state_id)
             return 'License Expired.';
         }
         if ($daysLeft === 0) {
-            return 'Your car registration expires today! Please renew now.';
+            return 'Your car registration expire today! Please renew now.';
         }
         return "Expires in {$daysLeft} day" . ($daysLeft > 1 ? 's' : '') . ".";
     }
