@@ -51,7 +51,7 @@ class CarController extends Controller
             'registration_no' => 'required|string',
             'date_issued' => 'required|date',
             'expiry_date' => 'required|date|after:date_issued',
-            'document_images' => 'required|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            'document_images' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
         ];
 
         // Plate fields for unregistered cars
@@ -249,9 +249,24 @@ class CarController extends Controller
             }
         }
 
+        // Sort cars by urgency (expired first, then urgent, then normal)
+        $sortedCars = $cars->sortBy(function ($car) {
+            if (!$car->expiry_date) return 999; // No expiry date - lowest priority
+            
+            $daysLeft = Carbon::now()->diffInDays(Carbon::parse($car->expiry_date), false);
+            
+            if ($daysLeft < 0) return 0;      // Expired - highest priority
+            if ($daysLeft === 0) return 1;    // Expires today
+            if ($daysLeft <= 3) return 2;     // Urgent (1-3 days)
+            if ($daysLeft <= 7) return 3;     // Warning (4-7 days)
+            if ($daysLeft <= 30) return 4;    // Info (8-30 days)
+            
+            return 5; // Normal (>30 days)
+        });
+
         return response()->json([
             'status' => 'success',
-            'cars' => $cars->map(fn($car) => $this->filterCarResponse($car)),
+            'cars' => $sortedCars->map(fn($car) => $this->filterCarResponse($car)),
         ]);
     }
 
@@ -707,6 +722,110 @@ public function getLgaByState($state_id)
                 unset($data[$field]);
             }
         }
+
+        // Add complete reminder information directly to the car response
+        $userId = Auth::user()->userId;
+        $reminder = \App\Models\Reminder::where('user_id', $userId)
+            ->where('type', 'car')
+            ->where('ref_id', $car->id)
+            ->where('is_sent', false)
+            ->first();
+
+        if ($reminder) {
+            // Calculate days left for expiry
+            $daysLeft = null;
+            if ($car->expiry_date) {
+                $expiryDate = Carbon::parse($car->expiry_date)->startOfDay();
+                $now = Carbon::now()->startOfDay();
+                $daysLeft = $now->diffInDays($expiryDate, false);
+            }
+
+            $data['reminder'] = [
+                'id' => $reminder->id,
+                'user_id' => $reminder->user_id,
+                'type' => $reminder->type,
+                'message' => $reminder->message,
+                'remind_at' => $reminder->remind_at,
+                'is_sent' => $reminder->is_sent,
+                'created_at' => $reminder->created_at,
+                'updated_at' => $reminder->updated_at,
+                'days_left' => $daysLeft,
+                'status' => $this->getReminderStatus($daysLeft),
+                'is_urgent' => $daysLeft !== null && $daysLeft <= 7,
+                'is_expired' => $daysLeft !== null && $daysLeft < 0,
+                'expires_today' => $daysLeft === 0,
+            ];
+        } else {
+            // If no reminder exists, calculate status from expiry date
+            $daysLeft = null;
+            $status = 'normal';
+            $isUrgent = false;
+            $isExpired = false;
+            $expiresToday = false;
+
+            if ($car->expiry_date) {
+                $expiryDate = Carbon::parse($car->expiry_date)->startOfDay();
+                $now = Carbon::now()->startOfDay();
+                $daysLeft = $now->diffInDays($expiryDate, false);
+                
+                $status = $this->getReminderStatus($daysLeft);
+                $isUrgent = $daysLeft <= 7;
+                $isExpired = $daysLeft < 0;
+                $expiresToday = $daysLeft === 0;
+            }
+
+            $data['reminder'] = [
+                'id' => null,
+                'user_id' => $userId,
+                'type' => 'car',
+                'message' => $this->getReminderMessage($daysLeft),
+                'remind_at' => null,
+                'is_sent' => false,
+                'created_at' => null,
+                'updated_at' => null,
+                'days_left' => $daysLeft,
+                'status' => $status,
+                'is_urgent' => $isUrgent,
+                'is_expired' => $isExpired,
+                'expires_today' => $expiresToday,
+            ];
+        }
+
         return $data;
+    }
+
+    /**
+     * Get reminder status based on days left
+     */
+    private function getReminderStatus($daysLeft) {
+        if ($daysLeft === null) {
+            return 'normal';
+        }
+        if ($daysLeft < 0) {
+            return 'expired';
+        }
+        if ($daysLeft === 0) {
+            return 'expires_today';
+        }
+        if ($daysLeft <= 7) {
+            return 'urgent';
+        }
+        return 'normal';
+    }
+
+    /**
+     * Get reminder message based on days left
+     */
+    private function getReminderMessage($daysLeft) {
+        if ($daysLeft === null) {
+            return 'No registration reminder set.';
+        }
+        if ($daysLeft < 0) {
+            return 'License Expired.';
+        }
+        if ($daysLeft === 0) {
+            return 'Your car registration expires today! Please renew now.';
+        }
+        return "Expires in {$daysLeft} day" . ($daysLeft > 1 ? 's' : '') . ".";
     }
 }
