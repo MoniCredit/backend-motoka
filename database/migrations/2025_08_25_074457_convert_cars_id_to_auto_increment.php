@@ -4,6 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 return new class extends Migration
 {
@@ -57,7 +58,7 @@ return new class extends Migration
         $cars = DB::table('cars')->get();
         foreach ($cars as $car) {
             DB::table('cars_new')->insert([
-                'slug' => $car->slug,
+                'slug' => Str::uuid(), 
                 'user_id' => $car->user_id,
                 'name_of_owner' => $car->name_of_owner,
                 'phone_number' => $car->phone_number,
