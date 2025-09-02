@@ -22,3 +22,8 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Security Testing Files (exclude from repository)
+OTP_LOGIN_TEST.md
+SQL_INJECTION_TEST.md
+test_sql_injection.php

@@ -28,6 +28,10 @@ Route::controller(AuthController::class)->group(function () {
     Route::post('login', 'login')->name('login');
     Route::post('login2', 'login2')->name('login2');
 
+    // OTP-based login routes
+    Route::post('/send-login-otp', [AuthController::class, 'sendLoginOTP']);
+    Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOTP']);
+
     Route::post('/send-otp', [AuthController::class, 'sendOtp']);
     Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
     Route::post('/reset-password', [AuthController::class, 'reset']);
