@@ -440,13 +440,7 @@ class AuthController extends Controller
                 Log::error('Failed to send verification code: ' . $e->getMessage());
             }
 
-            $message = 'User created successfully. ';
-            if ($request->email) {
-                $message .= 'Please check your email for verification code. ';
-            }
-            if ($request->phone_number) {
-                $message .= 'Please check your phone for verification code.';
-            }
+            $message = 'User created successfully. Please check your email or phone for verification code.';
 
             return response()->json([
                 'status' => 'success',
