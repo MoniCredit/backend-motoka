@@ -39,8 +39,8 @@ class AuthController extends Controller
         $otp = '';
         
         // Ensure at least one letter and one number
-        $otp .= $characters[rand(0, 25)]; // First character is a letter
-        $otp .= $characters[rand(26, 35)]; // Second character is a number
+        $otp .= $characters[rand(0, 25)]; 
+        $otp .= $characters[rand(26, 35)];
         
         // Fill remaining characters randomly
         for ($i = 2; $i < 4; $i++) {
