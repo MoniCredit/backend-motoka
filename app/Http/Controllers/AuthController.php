@@ -98,11 +98,11 @@ class AuthController extends Controller
      */
     public function sendLoginOTP(Request $request)
     {
-        // Rate limiting: 5 attempts per IP per 30 seconds
+        // Rate limiting: 3 attempts per IP per 15 minutes
         $ip = $request->ip();
         $key = 'login_otp_' . $ip;
         
-        if (RateLimiter::tooManyAttempts($key, 5)) {
+        if (RateLimiter::tooManyAttempts($key, 3)) {
             $seconds = RateLimiter::availableIn($key);
             return response()->json([
                 'status' => 'error',
@@ -176,7 +176,7 @@ class AuthController extends Controller
             });
 
             // Increment rate limiter
-            RateLimiter::hit($key, 30); // 30 seconds window
+            RateLimiter::hit($key, 900); // 15 minutes window
 
             return response()->json([
                 'status' => 'success',
@@ -198,11 +198,11 @@ class AuthController extends Controller
      */
     public function verifyLoginOTP(Request $request)
     {
-        // Rate limiting: 5 attempts per IP per 30 seconds
+        // Rate limiting: 3 attempts per IP per 15 minutes
         $ip = $request->ip();
         $key = 'verify_otp_' . $ip;
         
-        if (RateLimiter::tooManyAttempts($key, 5)) {
+        if (RateLimiter::tooManyAttempts($key, 3)) {
             $seconds = RateLimiter::availableIn($key);
             return response()->json([
                 'status' => 'error',
@@ -248,7 +248,7 @@ class AuthController extends Controller
         $otpData = Cache::get($otpKey);
 
         if (!$otpData) {
-            RateLimiter::hit($key, 30);
+            RateLimiter::hit($key, 900);
             return response()->json([
                 'status' => 'error',
                 'message' => 'OTP expired or not found. Please request a new one.'
@@ -258,7 +258,7 @@ class AuthController extends Controller
         // Check if OTP is expired
         if (Carbon::now()->gt($otpData['expires_at'])) {
             Cache::forget($otpKey);
-            RateLimiter::hit($key, 30);
+            RateLimiter::hit($key, 900);
             return response()->json([
                 'status' => 'error',
                 'message' => 'OTP has expired. Please request a new one.'
@@ -268,7 +268,7 @@ class AuthController extends Controller
         // Check OTP attempts
         if ($otpData['attempts'] >= 3) {
             Cache::forget($otpKey);
-            RateLimiter::hit($key, 30);
+            RateLimiter::hit($key, 900);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Too many OTP attempts. Please request a new OTP.'
@@ -281,7 +281,7 @@ class AuthController extends Controller
             $otpData['attempts']++;
             Cache::put($otpKey, $otpData, 600);
             
-            RateLimiter::hit($key, 30);
+            RateLimiter::hit($key, 900);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Invalid OTP. ' . (3 - $otpData['attempts']) . ' attempts remaining.'
