@@ -826,6 +826,9 @@ public function getLgaByState($state_id)
         if ($daysLeft === 0) {
             return 'Your car registration expire today! Please renew now.';
         }
+        if ($daysLeft > 30) {
+            return 'No Reminder';
+        }
         return "Expires in {$daysLeft} day" . ($daysLeft > 1 ? 's' : '') . ".";
     }
 }
