@@ -166,6 +166,7 @@ class PaymentController extends Controller
         'payment_schedule_id' => $request->payment_schedule_id,
         'car_id' => $car->id,
         'status' => 'pending',
+        'payment_gateway' => 'monicredit',
         'reference_code' => $data['id'] ?? null,
         'payment_description' => $items[0]['item'],
         'user_id' => $user->id,

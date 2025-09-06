@@ -27,3 +27,8 @@ Thumbs.db
 OTP_LOGIN_TEST.md
 SQL_INJECTION_TEST.md
 test_sql_injection.php
+PAYSTACK_INTEGRATION_GUIDE.md
+PAYSTACK_WEBHOOK_SETUP.md
+CALLBACK_VS_WEBHOOK_GUIDE.md
+test_sanitized_response.php
+API_SECURITY_GUIDE.md
