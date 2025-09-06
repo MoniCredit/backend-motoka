@@ -13,6 +13,7 @@ use App\Http\Controllers\ReminderController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\MonicreditPaymentController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PaystackPaymentController;
 use App\Http\Controllers\PaymentScheduleController;
 use App\Http\Controllers\KycController;
 use App\Models\Car;
@@ -95,8 +96,15 @@ Route::controller(AuthController::class)->group(function () {
 
 
         Route::middleware('auth:sanctum')->prefix('payment')->group(function () {
+            // Monicredit payment routes
             Route::post('/initialize', [PaymentController::class, 'initializePayment']);
             Route::post('/verify-payment/{transaction_id}', [PaymentController::class, 'verifyPayment']);
+            
+            // Paystack payment routes
+            Route::post('/paystack/initialize', [PaystackPaymentController::class, 'initializePayment']);
+            Route::post('/paystack/verify/{reference}', [PaystackPaymentController::class, 'verifyPayment']);
+            
+            // Common payment routes
             Route::get('/car-receipt/{car_slug}', [PaymentController::class, 'getCarPaymentReceipt']);
             Route::get('/receipt/{payment_slug}', [PaymentController::class, 'getPaymentReceipt']);
             Route::get('/wallet', [PaymentController::class, 'getWalletInfo']);
@@ -257,4 +265,10 @@ Route::prefix('acl')->name('acl.')->group(function () {
 
 // List all delivery fees (public)
 Route::get('/delivery-fees', [PaymentController::class, 'listAllDeliveryFees']);
+
+// Paystack webhook (public - no auth required)
+Route::post('/payment/paystack/webhook', [PaystackPaymentController::class, 'handleWebhook']);
+
+// Paystack callback (public - no auth required)
+Route::match(['get', 'post'], '/payment/paystack/callback', [PaystackPaymentController::class, 'handleCallback']);
 
