@@ -25,11 +25,7 @@ This guide covers the complete admin system implementation for Motoka, including
 ## 🔐 Admin Authentication
 
 ### Seeded Admin Emails
-The following emails have been seeded as admin users:
-- `sulaimontaofeek385@gmail.com`
-- `coolchi001@gmail.com`
-- `rakiorasak@gmail.com`
-- `ogunneyeoyinkansola@gmail.com`
+Admin users are seeded through the AdminUserSeeder. Contact the development team for access credentials.
 
 ### Login Process
 1. Admin enters their email address
