@@ -282,15 +282,24 @@ class AdminController extends Controller
             ], 404);
         }
 
+        // Resolve state ID to state name
+        $state = \App\Models\State::find($order->state);
+        if (!$state) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invalid state ID: ' . $order->state
+            ], 400);
+        }
+
         // Find agent for the order's state
-        $agent = Agent::where('state', $order->state)
+        $agent = Agent::where('state', $state->state_name)
             ->where('status', 'active')
             ->first();
 
         if (!$agent) {
             return response()->json([
                 'status' => false,
-                'message' => 'No active agent found for state: ' . $order->state
+                'message' => 'No active agent found for state: ' . $state->state_name
             ], 404);
         }
 
@@ -638,6 +647,58 @@ class AdminController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'Failed to create agent: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get recent orders for dashboard
+     */
+    public function getRecentOrders()
+    {
+        try {
+            $recentOrders = Order::with(['user', 'car', 'payment'])
+                ->leftJoin('states', 'orders.state', '=', 'states.id')
+                ->leftJoin('lgas', 'orders.lga', '=', 'lgas.id')
+                ->select('orders.*', 'states.state_name as state_name', 'lgas.lga_name as lga_name')
+                ->orderBy('orders.created_at', 'desc')
+                ->limit(5)
+                ->get();
+
+            return response()->json([
+                'status' => true,
+                'data' => $recentOrders
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to fetch recent orders: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get recent transactions for dashboard
+     */
+    public function getRecentTransactions()
+    {
+        try {
+            $recentTransactions = \App\Models\Payment::with(['car'])
+                ->where('status', 'completed')
+                ->orderBy('created_at', 'desc')
+                ->limit(5)
+                ->get();
+
+            return response()->json([
+                'status' => true,
+                'data' => $recentTransactions
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to fetch recent transactions: ' . $e->getMessage()
             ], 500);
         }
     }

@@ -300,5 +300,9 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     
     // States
     Route::get('/states', [AdminController::class, 'getStates']);
+    
+    // Dashboard data
+    Route::get('/recent-orders', [AdminController::class, 'getRecentOrders']);
+    Route::get('/recent-transactions', [AdminController::class, 'getRecentTransactions']);
 });
 

@@ -32,3 +32,8 @@ PAYSTACK_WEBHOOK_SETUP.md
 CALLBACK_VS_WEBHOOK_GUIDE.md
 test_sanitized_response.php
 API_SECURITY_GUIDE.md
+
+# Documentation Files (exclude from repository)
+ADMIN_SYSTEM_GUIDE.md
+README.md
+*.md
