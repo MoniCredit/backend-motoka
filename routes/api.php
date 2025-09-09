@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AclController;
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CarController;
 use App\Http\Controllers\CarTypeController;
@@ -271,4 +272,33 @@ Route::post('/payment/paystack/webhook', [PaystackPaymentController::class, 'han
 
 // Paystack callback (public - no auth required)
 Route::match(['get', 'post'], '/payment/paystack/callback', [PaystackPaymentController::class, 'handleCallback']);
+
+// Admin authentication routes (public)
+Route::post('/admin/send-otp', [AdminController::class, 'sendAdminOTP']);
+Route::post('/admin/verify-otp', [AdminController::class, 'verifyAdminOTP']);
+Route::post('/admin/clear-rate-limiters', [AdminController::class, 'clearRateLimiters']); // For testing only
+
+// Admin protected routes
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    // Dashboard
+    Route::get('/dashboard/stats', [AdminController::class, 'getDashboardStats']);
+    
+    // Orders
+    Route::get('/orders', [AdminController::class, 'getOrders']);
+    Route::get('/orders/{slug}', [AdminController::class, 'getOrder']);
+    Route::post('/orders/{slug}/process', [AdminController::class, 'processOrder']);
+    Route::put('/orders/{slug}/status', [AdminController::class, 'updateOrderStatus']);
+    
+    // Agents
+    Route::get('/agents', [AdminController::class, 'getAgents']);
+    Route::get('/agents/{slug}', [AdminController::class, 'getAgent']);
+    Route::post('/agents', [AdminController::class, 'createAgent']);
+    
+    // Cars
+    Route::get('/cars', [AdminController::class, 'getCars']);
+    Route::get('/cars/{slug}', [AdminController::class, 'getCar']);
+    
+    // States
+    Route::get('/states', [AdminController::class, 'getStates']);
+});
 
