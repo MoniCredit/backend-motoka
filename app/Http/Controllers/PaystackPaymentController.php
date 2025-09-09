@@ -278,6 +278,9 @@ class PaystackPaymentController extends Controller
                     $car->status = 'active';
                     $car->save();
 
+                    // Create order for admin processing
+                    $this->createOrderFromPayment($payment, $car, $user);
+
                     // Handle reminders (same logic as Monicredit)
                     $userModel = \App\Models\User::find($payment->user_id);
                     $userIdString = $userModel ? $userModel->userId : null;
@@ -535,6 +538,12 @@ class PaystackPaymentController extends Controller
             $car->status = 'active';
             $car->save();
 
+            // Create order for admin processing
+            $user = \App\Models\User::find($payment->user_id);
+            if ($user) {
+                $this->createOrderFromPayment($payment, $car, $user);
+            }
+
             // Handle reminders
             $this->updateCarReminders($payment, $car);
         }
@@ -654,6 +663,72 @@ class PaystackPaymentController extends Controller
                     ]
                 );
             }
+        }
+    }
+
+    /**
+     * Create order from successful payment
+     */
+    private function createOrderFromPayment($payment, $car, $user)
+    {
+        try {
+            // Get payment schedule details
+            $paymentSchedule = $payment->paymentSchedule;
+            if (!$paymentSchedule) {
+                return;
+            }
+
+            // Determine order type based on payment head
+            $orderType = $this->getOrderTypeFromPaymentHead($paymentSchedule->payment_head->payment_head_name);
+
+            // Get delivery address from payment metadata or car/user
+            $metaData = is_string($payment->meta_data) ? json_decode($payment->meta_data, true) : $payment->meta_data;
+            $deliveryAddress = $metaData['delivery_address'] ?? $car->address ?? $user->address ?? 'Address not provided';
+            $deliveryContact = $metaData['delivery_contact'] ?? $user->phone_number ?? 'Contact not provided';
+            $stateId = $metaData['state_id'] ?? null;
+            $lgaId = $metaData['lga_id'] ?? null;
+
+            // Create order
+            \App\Models\Order::create([
+                'slug' => \Illuminate\Support\Str::uuid(),
+                'user_id' => $user->id,
+                'car_id' => $car->id,
+                'payment_id' => $payment->id,
+                'order_type' => $orderType,
+                'status' => 'pending',
+                'amount' => $payment->amount,
+                'delivery_address' => $deliveryAddress,
+                'delivery_contact' => $deliveryContact,
+                'state' => $stateId,
+                'lga' => $lgaId,
+                'notes' => "Payment via {$payment->payment_gateway} - {$paymentSchedule->payment_head->payment_head_name}",
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to create order from payment', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Get order type from payment head name
+     */
+    private function getOrderTypeFromPaymentHead($paymentHeadName)
+    {
+        $paymentHeadName = strtolower($paymentHeadName);
+        
+        if (strpos($paymentHeadName, 'license') !== false || strpos($paymentHeadName, 'renewal') !== false) {
+            return 'license_renewal';
+        } elseif (strpos($paymentHeadName, 'registration') !== false) {
+            return 'vehicle_registration';
+        } elseif (strpos($paymentHeadName, 'insurance') !== false) {
+            return 'insurance';
+        } elseif (strpos($paymentHeadName, 'inspection') !== false) {
+            return 'inspection';
+        } else {
+            return 'general_service';
         }
     }
 
