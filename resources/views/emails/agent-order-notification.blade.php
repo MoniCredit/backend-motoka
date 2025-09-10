@@ -98,11 +98,11 @@
             </div>
             <div class="detail-row">
                 <span class="detail-label">State:</span>
-                <span class="detail-value">{{ $order->state }}</span>
+                <span class="detail-value">{{ $stateName ?? 'Unknown State' }}</span>
             </div>
             <div class="detail-row">
                 <span class="detail-label">LGA:</span>
-                <span class="detail-value">{{ $order->lga }}</span>
+                <span class="detail-value">{{ $lgaName ?? 'Unknown LGA' }}</span>
             </div>
             @if($order->notes)
             <div class="detail-row">
