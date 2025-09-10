@@ -116,7 +116,7 @@ class PaystackPaymentController extends Controller
             'amount' => $totalAmount * 100, // Paystack expects amount in kobo
             'reference' => $transaction_id,
             'currency' => 'NGN',
-            'callback_url' => env('APP_URL') . '/api/payment/paystack/callback',
+            'callback_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/payment/paystack/callback',
             'metadata' => [
                 'user_id' => $user->id,
                 'car_id' => $car->id,
@@ -278,7 +278,7 @@ class PaystackPaymentController extends Controller
                     $car->status = 'active';
                     $car->save();
 
-                    // Create order for admin processing
+                    // Create order for admin processing (only if not already created)
                     $this->createOrderFromPayment($payment, $car, $user);
 
                     // Handle reminders (same logic as Monicredit)
@@ -672,6 +672,13 @@ class PaystackPaymentController extends Controller
     private function createOrderFromPayment($payment, $car, $user)
     {
         try {
+            // Check if order already exists for this payment to prevent duplicates
+            $existingOrder = \App\Models\Order::where('payment_id', $payment->id)->first();
+            if ($existingOrder) {
+                // Order already exists, no need to create another one
+                return;
+            }
+
             // Get payment schedule details
             $paymentSchedule = $payment->paymentSchedule;
             if (!$paymentSchedule) {
@@ -717,18 +724,39 @@ class PaystackPaymentController extends Controller
      */
     private function getOrderTypeFromPaymentHead($paymentHeadName)
     {
-        $paymentHeadName = strtolower($paymentHeadName);
+        $paymentHeadName = strtolower(trim($paymentHeadName));
         
-        if (strpos($paymentHeadName, 'license') !== false || strpos($paymentHeadName, 'renewal') !== false) {
-            return 'license_renewal';
-        } elseif (strpos($paymentHeadName, 'registration') !== false) {
-            return 'vehicle_registration';
-        } elseif (strpos($paymentHeadName, 'insurance') !== false) {
-            return 'insurance';
-        } elseif (strpos($paymentHeadName, 'inspection') !== false) {
-            return 'inspection';
-        } else {
-            return 'general_service';
+        // Map exact payment head names to order types
+        switch ($paymentHeadName) {
+            case 'insurance':
+                return 'insurance';
+            case 'vehicle license':
+                return 'license_renewal';
+            case 'proof of ownership':
+                return 'proof_of_ownership';
+            case 'road wortiness':
+                return 'road_worthiness';
+            case 'hackney permit':
+                return 'hackney_permit';
+            default:
+                // Fallback to keyword matching for any new payment heads
+                if (strpos($paymentHeadName, 'license') !== false || strpos($paymentHeadName, 'renewal') !== false) {
+                    return 'license_renewal';
+                } elseif (strpos($paymentHeadName, 'registration') !== false) {
+                    return 'vehicle_registration';
+                } elseif (strpos($paymentHeadName, 'insurance') !== false) {
+                    return 'insurance';
+                } elseif (strpos($paymentHeadName, 'inspection') !== false) {
+                    return 'inspection';
+                } elseif (strpos($paymentHeadName, 'proof') !== false) {
+                    return 'proof_of_ownership';
+                } elseif (strpos($paymentHeadName, 'road') !== false) {
+                    return 'road_worthiness';
+                } elseif (strpos($paymentHeadName, 'hackney') !== false) {
+                    return 'hackney_permit';
+                } else {
+                    return 'general_service';
+                }
         }
     }
 

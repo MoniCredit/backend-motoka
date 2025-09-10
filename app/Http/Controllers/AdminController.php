@@ -175,8 +175,10 @@ class AdminController extends Controller
             'total_agents' => Agent::count(),
             'active_agents' => Agent::where('status', 'active')->count(),
             'total_cars' => Car::count(),
-            'total_payments' => Payment::where('status', 'completed')->sum('amount'),
-            'pending_payments' => Payment::where('status', 'pending')->sum('amount'),
+            'total_amount' => Order::sum('amount'),
+            'completed_amount' => Order::where('status', 'completed')->sum('amount'),
+            'pending_amount' => Order::where('status', 'pending')->sum('amount'),
+            'declined_amount' => Order::where('status', 'declined')->sum('amount'),
         ];
 
         return response()->json([
