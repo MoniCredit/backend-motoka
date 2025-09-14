@@ -16,7 +16,7 @@ class AdminUserSeeder extends Seeder
     public function run(): void
     {
         $adminEmails = [
-            'sulaimontaofeek385@gmail.com',
+            'sulaimontaofeek384@gmail.com',
             'coolchi001@gmail.com',
             'rakiorasak@gmail.com',
             'ogunneyeoyinkansola@gmail.com',
