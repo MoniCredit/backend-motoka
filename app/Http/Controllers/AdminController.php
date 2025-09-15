@@ -7,6 +7,7 @@ use App\Models\Payment;
 use App\Models\Car;
 use App\Models\Agent;
 use App\Models\Order;
+use App\Models\AgentPayment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -359,6 +360,11 @@ class AdminController extends Controller
         
         if ($request->status === 'completed') {
             $updateData['completed_at'] = now();
+            
+            // Update agent payment when order is completed
+            if ($order->agent_id) {
+                $this->updateAgentPayment($order);
+            }
         }
 
         $order->update($updateData);
@@ -713,6 +719,121 @@ class AdminController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'Failed to fetch recent transactions: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update agent payment when order is completed
+     */
+    private function updateAgentPayment(Order $order)
+    {
+        try {
+            $agent = Agent::find($order->agent_id);
+            if (!$agent) {
+                return;
+            }
+
+            // Calculate payment amount based on order type
+            $paymentAmount = $this->calculateAgentPayment($order);
+
+            // Create or update agent payment record
+            $agentPayment = AgentPayment::updateOrCreate(
+                [
+                    'agent_id' => $agent->id,
+                    'order_id' => $order->id,
+                ],
+                [
+                    'amount' => $paymentAmount,
+                    'commission_rate' => 10.00, // 10% commission rate
+                    'status' => 'pending',
+                    'notes' => "Payment for completed order: {$order->order_type}",
+                ]
+            );
+
+            // Log the payment update
+            \Log::info("Agent payment updated for order {$order->slug}", [
+                'agent_id' => $agent->id,
+                'order_id' => $order->id,
+                'amount' => $paymentAmount,
+                'payment_id' => $agentPayment->id
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error("Failed to update agent payment for order {$order->slug}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Calculate agent payment amount based on order type
+     */
+    private function calculateAgentPayment(Order $order)
+    {
+        // Define payment amounts for different order types
+        $paymentRates = [
+            'vehicle_license' => 5000.00,
+            'drivers_license' => 3000.00,
+            'plate_number' => 2000.00,
+            'vehicle_inspection' => 1500.00,
+        ];
+
+        return $paymentRates[$order->order_type] ?? 1000.00; // Default amount
+    }
+
+    /**
+     * Get agent payments for a specific agent
+     */
+    public function getAgentPayments(Request $request, $agentId)
+    {
+        try {
+            $agent = Agent::findOrFail($agentId);
+            
+            $payments = AgentPayment::where('agent_id', $agentId)
+                ->with(['order.user', 'order.car'])
+                ->orderBy('created_at', 'desc')
+                ->paginate(15);
+
+            return response()->json([
+                'status' => true,
+                'data' => [
+                    'agent' => $agent,
+                    'payments' => $payments,
+                    'total_earnings' => AgentPayment::where('agent_id', $agentId)
+                        ->where('status', 'paid')
+                        ->sum('commission_amount'),
+                    'pending_earnings' => AgentPayment::where('agent_id', $agentId)
+                        ->where('status', 'pending')
+                        ->sum('commission_amount'),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to fetch agent payments',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get all agent payments (admin view)
+     */
+    public function getAllAgentPayments(Request $request)
+    {
+        try {
+            $payments = AgentPayment::with(['agent', 'order.user', 'order.car'])
+                ->orderBy('created_at', 'desc')
+                ->paginate(15);
+
+            return response()->json([
+                'status' => true,
+                'data' => $payments
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to fetch agent payments',
+                'error' => $e->getMessage()
             ], 500);
         }
     }

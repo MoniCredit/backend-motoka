@@ -46,6 +46,11 @@ class Agent extends Model
         return $this->hasMany(Order::class);
     }
 
+    public function agentPayments(): HasMany
+    {
+        return $this->hasMany(AgentPayment::class);
+    }
+
     public function getFullNameAttribute()
     {
         return $this->first_name . ' ' . $this->last_name;

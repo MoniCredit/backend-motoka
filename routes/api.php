@@ -315,5 +315,9 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/orders/{orderSlug}/send-documents', [OrderDocumentController::class, 'sendDocumentsToUser']);
     Route::get('/orders/{orderSlug}/documents', [OrderDocumentController::class, 'getOrderDocuments']);
     Route::get('/orders/{orderSlug}/documents/{documentId}', [OrderDocumentController::class, 'viewDocument']);
+    
+    // Agent Payments
+    Route::get('/agent-payments', [AdminController::class, 'getAllAgentPayments']);
+    Route::get('/agents/{agentId}/payments', [AdminController::class, 'getAgentPayments']);
 });
 
