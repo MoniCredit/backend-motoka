@@ -20,6 +20,7 @@ class Payment extends Model
 
     protected $casts = [
         'raw_response' => 'array',
+        'gateway_response' => 'array',
     ];
 
     /**

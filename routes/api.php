@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AclController;
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CarController;
 use App\Http\Controllers\CarTypeController;
@@ -13,6 +14,7 @@ use App\Http\Controllers\ReminderController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\MonicreditPaymentController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PaystackPaymentController;
 use App\Http\Controllers\PaymentScheduleController;
 use App\Http\Controllers\KycController;
 use App\Models\Car;
@@ -27,16 +29,19 @@ Route::controller(AuthController::class)->group(function () {
     Route::post('register', 'register')->name('register');
     Route::post('login', 'login')->name('login');
     Route::post('login2', 'login2')->name('login2');
+    Route::post('send-otp', 'sendOtp');
+    Route::post('verify-otp', 'verifyOtp');
+    Route::post('reset-password', 'reset');
+});
 
-    Route::post('/send-otp', [AuthController::class, 'sendOtp']);
-    Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
-    Route::post('/reset-password', [AuthController::class, 'reset']);
+// OTP-based login routes (outside controller group)
+Route::post('/send-login-otp', [AuthController::class, 'sendLoginOTP']);
+Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOTP']);
 
     // Protected authentication routes
     Route::middleware('auth:sanctum')->group(function () {
-        Route::post('logout', 'logout')->name('logout');
-        Route::post('logout2', 'logout2')->name('logout2');
-        Route::post('refresh', 'refresh')->name('refresh');
+        Route::post('logout', [AuthController::class, 'logout'])->name('logout');
+        Route::post('refresh', [AuthController::class, 'refresh'])->name('refresh');
 
         Route::post('/kyc', [KycController::class, 'store']);
         Route::get('/kyc', [KycController::class, 'index']);
@@ -91,8 +96,11 @@ Route::controller(AuthController::class)->group(function () {
 
 
         Route::middleware('auth:sanctum')->prefix('payment')->group(function () {
+            // Monicredit payment routes
             Route::post('/initialize', [PaymentController::class, 'initializePayment']);
             Route::post('/verify-payment/{transaction_id}', [PaymentController::class, 'verifyPayment']);
+            
+            // Common payment routes
             Route::get('/car-receipt/{car_slug}', [PaymentController::class, 'getCarPaymentReceipt']);
             Route::get('/receipt/{payment_slug}', [PaymentController::class, 'getPaymentReceipt']);
             Route::get('/wallet', [PaymentController::class, 'getWalletInfo']);
@@ -100,6 +108,8 @@ Route::controller(AuthController::class)->group(function () {
             Route::get('/transactions', [PaymentController::class, 'listUserTransactions']);
             Route::get('/all-receipts', [PaymentController::class, 'getAllReceipts']);
         });
+
+
       
 
 
@@ -144,13 +154,16 @@ Route::controller(AuthController::class)->group(function () {
        
     });
 
-    // Social authentication routes
-    Route::get('auth/{provider}', 'redirectToProvider');
-    Route::get('auth/{provider}/callback', 'handleProviderCallback');
+// Social authentication routes (public)
+Route::get('auth/{provider}', [AuthController::class, 'redirectToProvider']);
+Route::get('auth/{provider}/callback', [AuthController::class, 'handleProviderCallback']);
 
+// Paystack payment routes (public)
+Route::post('/paystack/initialize', [PaystackPaymentController::class, 'initializePayment']);
+Route::post('/paystack/verify/{reference}', [PaystackPaymentController::class, 'verifyPayment']);
+Route::get('/paystack/callback', [PaystackPaymentController::class, 'handleCallback']);
+Route::post('/paystack/webhook', [PaystackPaymentController::class, 'handleWebhook']);
 
-    
-});
 
 // Verification routes
 // Route::controller(VerificationController::class)->group(function () {
@@ -253,4 +266,43 @@ Route::prefix('acl')->name('acl.')->group(function () {
 
 // List all delivery fees (public)
 Route::get('/delivery-fees', [PaymentController::class, 'listAllDeliveryFees']);
+
+// Paystack webhook (public - no auth required)
+Route::post('/payment/paystack/webhook', [PaystackPaymentController::class, 'handleWebhook']);
+
+// Paystack callback (public - no auth required)
+Route::match(['get', 'post'], '/payment/paystack/callback', [PaystackPaymentController::class, 'handleCallback']);
+
+// Admin authentication routes (public)
+Route::post('/admin/send-otp', [AdminController::class, 'sendAdminOTP']);
+Route::post('/admin/verify-otp', [AdminController::class, 'verifyAdminOTP']);
+Route::post('/admin/clear-rate-limiters', [AdminController::class, 'clearRateLimiters']); // For testing only
+
+// Admin protected routes
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    // Dashboard
+    Route::get('/dashboard/stats', [AdminController::class, 'getDashboardStats']);
+    
+    // Orders
+    Route::get('/orders', [AdminController::class, 'getOrders']);
+    Route::get('/orders/{slug}', [AdminController::class, 'getOrder']);
+    Route::post('/orders/{slug}/process', [AdminController::class, 'processOrder']);
+    Route::put('/orders/{slug}/status', [AdminController::class, 'updateOrderStatus']);
+    
+    // Agents
+    Route::get('/agents', [AdminController::class, 'getAgents']);
+    Route::get('/agents/{slug}', [AdminController::class, 'getAgent']);
+    Route::post('/agents', [AdminController::class, 'createAgent']);
+    
+    // Cars
+    Route::get('/cars', [AdminController::class, 'getCars']);
+    Route::get('/cars/{slug}', [AdminController::class, 'getCar']);
+    
+    // States
+    Route::get('/states', [AdminController::class, 'getStates']);
+    
+    // Dashboard data
+    Route::get('/recent-orders', [AdminController::class, 'getRecentOrders']);
+    Route::get('/recent-transactions', [AdminController::class, 'getRecentTransactions']);
+});
 

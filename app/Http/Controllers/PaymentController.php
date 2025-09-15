@@ -166,6 +166,7 @@ class PaymentController extends Controller
         'payment_schedule_id' => $request->payment_schedule_id,
         'car_id' => $car->id,
         'status' => 'pending',
+        'payment_gateway' => 'monicredit',
         'reference_code' => $data['id'] ?? null,
         'payment_description' => $items[0]['item'],
         'user_id' => $user->id,
@@ -280,6 +281,9 @@ public function verifyPayment($transaction_id)
         if ($car) {
             $car->status = 'active';
             $car->save();
+
+            // Create order for admin processing
+            $this->createOrderFromPayment($payment, $car, $user);
 
             // Get the userId string from the user model
             $userModel = \App\Models\User::find($payment->user_id);
@@ -636,6 +640,100 @@ public function listUserTransactions(Request $request)
             'last_page' => $transactions->lastPage(),
         ]
     ]);
+}
+
+/**
+ * Create order from successful payment
+ */
+private function createOrderFromPayment($payment, $car, $user)
+{
+    try {
+        // Check if order already exists for this payment to prevent duplicates
+        $existingOrder = \App\Models\Order::where('payment_id', $payment->id)->first();
+        if ($existingOrder) {
+            // Order already exists, no need to create another one
+            return;
+        }
+
+        // Get payment schedule details
+        $paymentSchedule = $payment->paymentSchedule;
+        if (!$paymentSchedule) {
+            return;
+        }
+
+        // Determine order type based on payment head
+        $orderType = $this->getOrderTypeFromPaymentHead($paymentSchedule->payment_head->payment_head_name);
+
+        // Get delivery address from payment metadata or car/user
+        $metaData = is_string($payment->meta_data) ? json_decode($payment->meta_data, true) : $payment->meta_data;
+        $deliveryAddress = $metaData['delivery_address'] ?? $car->address ?? $user->address ?? 'Address not provided';
+        $deliveryContact = $metaData['delivery_contact'] ?? $user->phone_number ?? 'Contact not provided';
+        $stateId = $metaData['state_id'] ?? null;
+        $lgaId = $metaData['lga_id'] ?? null;
+
+        // Create order
+        \App\Models\Order::create([
+            'slug' => \Illuminate\Support\Str::uuid(),
+            'user_id' => $user->id,
+            'car_id' => $car->id,
+            'payment_id' => $payment->id,
+            'order_type' => $orderType,
+            'status' => 'pending',
+            'amount' => $payment->amount,
+            'delivery_address' => $deliveryAddress,
+            'delivery_contact' => $deliveryContact,
+            'state' => $stateId,
+            'lga' => $lgaId,
+            'notes' => "Payment via {$payment->payment_gateway} - {$paymentSchedule->payment_head->payment_head_name}",
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Failed to create order from payment', [
+            'payment_id' => $payment->id,
+            'error' => $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * Get order type from payment head name
+ */
+private function getOrderTypeFromPaymentHead($paymentHeadName)
+{
+    $paymentHeadName = strtolower(trim($paymentHeadName));
+    
+    // Map exact payment head names to order types
+    switch ($paymentHeadName) {
+        case 'insurance':
+            return 'insurance';
+        case 'vehicle license':
+            return 'license_renewal';
+        case 'proof of ownership':
+            return 'proof_of_ownership';
+        case 'road wortiness':
+            return 'road_worthiness';
+        case 'hackney permit':
+            return 'hackney_permit';
+        default:
+            // Fallback to keyword matching for any new payment heads
+            if (strpos($paymentHeadName, 'license') !== false || strpos($paymentHeadName, 'renewal') !== false) {
+                return 'license_renewal';
+            } elseif (strpos($paymentHeadName, 'registration') !== false) {
+                return 'vehicle_registration';
+            } elseif (strpos($paymentHeadName, 'insurance') !== false) {
+                return 'insurance';
+            } elseif (strpos($paymentHeadName, 'inspection') !== false) {
+                return 'inspection';
+            } elseif (strpos($paymentHeadName, 'proof') !== false) {
+                return 'proof_of_ownership';
+            } elseif (strpos($paymentHeadName, 'road') !== false) {
+                return 'road_worthiness';
+            } elseif (strpos($paymentHeadName, 'hackney') !== false) {
+                return 'hackney_permit';
+            } else {
+                return 'general_service';
+            }
+    }
 }
 
 private function formatPayment(Payment $payment)
