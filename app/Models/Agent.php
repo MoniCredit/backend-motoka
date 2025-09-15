@@ -23,7 +23,6 @@ class Agent extends Model
         'account_number',
         'bank_name',
         'account_name',
-        'amount_to_pay',
         'profile_image',
         'nin_front_image',
         'nin_back_image',
