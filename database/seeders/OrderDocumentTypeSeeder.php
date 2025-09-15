@@ -73,6 +73,36 @@ class OrderDocumentTypeSeeder extends Seeder
                 'is_required' => true,
                 'sort_order' => 3,
             ],
+            
+            // Road Worthiness Documents
+            [
+                'order_type' => 'road_worthiness',
+                'document_name' => 'Vehicle Inspection Report',
+                'document_key' => 'inspection_report',
+                'is_required' => true,
+                'sort_order' => 1,
+            ],
+            [
+                'order_type' => 'road_worthiness',
+                'document_name' => 'Insurance Certificate',
+                'document_key' => 'insurance_certificate',
+                'is_required' => true,
+                'sort_order' => 2,
+            ],
+            [
+                'order_type' => 'road_worthiness',
+                'document_name' => 'Proof of Ownership',
+                'document_key' => 'proof_of_ownership',
+                'is_required' => true,
+                'sort_order' => 3,
+            ],
+            [
+                'order_type' => 'road_worthiness',
+                'document_name' => 'Vehicle Registration',
+                'document_key' => 'vehicle_registration',
+                'is_required' => true,
+                'sort_order' => 4,
+            ],
         ];
 
         foreach ($documentTypes as $type) {

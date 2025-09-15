@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use App\Mail\SendOrderDocuments;
 
 class OrderDocumentController extends Controller
 {
@@ -73,7 +74,16 @@ class OrderDocumentController extends Controller
 
             // Generate unique filename
             $filename = time() . '_' . $documentType . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('order_documents/' . $orderSlug, $filename, 'public');
+            
+            // Create directory if it doesn't exist
+            $directory = public_path('images/order_documents/' . $orderSlug);
+            if (!file_exists($directory)) {
+                mkdir($directory, 0755, true);
+            }
+            
+            // Move file to public/images directory
+            $file->move($directory, $filename);
+            $path = 'images/order_documents/' . $orderSlug . '/' . $filename;
 
             // Create document record
             $orderDocument = OrderDocument::create([
@@ -135,17 +145,35 @@ class OrderDocumentController extends Controller
             ], 400);
         }
 
-        // TODO: Implement email sending with attachments
-        // This would typically use Laravel Mail with attachments
+        try {
+            // Send email with document attachments
+            $subject = $request->subject ?: "Your {$order->order_type} Documents - Motoka";
+            $message = $request->message ?: "Please find attached the documents for your order. These documents are required for your {$order->order_type} application.";
+            
+            Mail::to($order->user->email)->send(new SendOrderDocuments(
+                $order,
+                $documents,
+                $subject,
+                $message
+            ));
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Documents sent to user successfully',
-            'data' => [
-                'user_email' => $order->user->email,
-                'documents_count' => $documents->count()
-            ]
-        ]);
+            return response()->json([
+                'status' => true,
+                'message' => 'Documents sent to user successfully',
+                'data' => [
+                    'user_email' => $order->user->email,
+                    'documents_count' => $documents->count()
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send documents email: ' . $e->getMessage());
+            
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to send email. Please try again.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

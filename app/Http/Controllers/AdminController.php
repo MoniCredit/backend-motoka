@@ -768,15 +768,8 @@ class AdminController extends Controller
      */
     private function calculateAgentPayment(Order $order)
     {
-        // Define payment amounts for different order types
-        $paymentRates = [
-            'vehicle_license' => 5000.00,
-            'drivers_license' => 3000.00,
-            'plate_number' => 2000.00,
-            'vehicle_inspection' => 1500.00,
-        ];
-
-        return $paymentRates[$order->order_type] ?? 1000.00; // Default amount
+        // Agent gets the full order amount
+        return $order->amount;
     }
 
     /**
