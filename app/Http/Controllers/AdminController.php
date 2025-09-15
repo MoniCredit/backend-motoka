@@ -614,12 +614,11 @@ class AdminController extends Controller
             'email' => 'required|email|unique:agents,email',
             'phone' => 'nullable|string|max:20',
             'address' => 'required|string',
-            'state' => 'required|string|unique:agents,state',
+            'state' => 'required|string',
             'lga' => 'required|string',
             'account_number' => 'nullable|string|max:20',
             'bank_name' => 'nullable|string|max:255',
             'account_name' => 'nullable|string|max:255',
-            'amount_to_pay' => 'nullable|numeric|min:0',
             'profile_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'nin_front_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'nin_back_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
@@ -630,7 +629,7 @@ class AdminController extends Controller
             $agentData = $request->only([
                 'first_name', 'last_name', 'email', 'phone', 'address',
                 'state', 'lga', 'account_number', 'bank_name', 'account_name',
-                'amount_to_pay', 'notes'
+                'notes'
             ]);
 
             // Handle file uploads
