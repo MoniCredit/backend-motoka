@@ -278,12 +278,14 @@ Route::match(['get', 'post'], '/payment/paystack/callback', [PaystackPaymentCont
 Route::get('/orders/{orderSlug}/documents/{documentId}', [OrderDocumentController::class, 'viewDocument']);
 
 // Admin authentication routes (public)
-Route::post('/admin/send-otp', [AdminController::class, 'sendAdminOTP']);
-Route::post('/admin/verify-otp', [AdminController::class, 'verifyAdminOTP']);
-Route::post('/admin/clear-rate-limiters', [AdminController::class, 'clearRateLimiters']); // For testing only
+Route::middleware(['cors'])->group(function () {
+    Route::post('/admin/send-otp', [AdminController::class, 'sendAdminOTP']);
+    Route::post('/admin/verify-otp', [AdminController::class, 'verifyAdminOTP']);
+    Route::post('/admin/clear-rate-limiters', [AdminController::class, 'clearRateLimiters']); // For testing only
+});
 
 // Admin protected routes
-Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+Route::middleware(['cors', 'auth:sanctum', 'admin'])->prefix('admin')->group(function () {
     // Dashboard
     Route::get('/dashboard/stats', [AdminController::class, 'getDashboardStats']);
     

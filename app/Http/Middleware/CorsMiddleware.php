@@ -15,8 +15,12 @@ class CorsMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
+        // Log CORS requests for debugging
+        \Log::info('CORS Middleware: ' . $request->method() . ' ' . $request->url());
+        
         // Handle preflight requests
         if ($request->isMethod('OPTIONS')) {
+            \Log::info('CORS: Handling preflight request');
             return response('', 200)
                 ->header('Access-Control-Allow-Origin', '*')
                 ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
@@ -32,6 +36,7 @@ class CorsMiddleware
         $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
         $response->headers->set('Access-Control-Allow-Credentials', 'true');
 
+        \Log::info('CORS: Headers added to response');
         return $response;
     }
 }
