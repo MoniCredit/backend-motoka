@@ -29,20 +29,19 @@ Route::controller(AuthController::class)->group(function () {
     Route::post('register', 'register')->name('register');
     Route::post('login', 'login')->name('login');
     Route::post('login2', 'login2')->name('login2');
+    Route::post('send-otp', 'sendOtp');
+    Route::post('verify-otp', 'verifyOtp');
+    Route::post('reset-password', 'reset');
+});
 
-    // OTP-based login routes
-    Route::post('/send-login-otp', [AuthController::class, 'sendLoginOTP']);
-    Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOTP']);
-
-    Route::post('/send-otp', [AuthController::class, 'sendOtp']);
-    Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
-    Route::post('/reset-password', [AuthController::class, 'reset']);
+// OTP-based login routes (outside controller group)
+Route::post('/send-login-otp', [AuthController::class, 'sendLoginOTP']);
+Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOTP']);
 
     // Protected authentication routes
     Route::middleware('auth:sanctum')->group(function () {
-        Route::post('logout', 'logout')->name('logout');
-        Route::post('logout2', 'logout2')->name('logout2');
-        Route::post('refresh', 'refresh')->name('refresh');
+        Route::post('logout', [AuthController::class, 'logout'])->name('logout');
+        Route::post('refresh', [AuthController::class, 'refresh'])->name('refresh');
 
         Route::post('/kyc', [KycController::class, 'store']);
         Route::get('/kyc', [KycController::class, 'index']);
@@ -101,10 +100,6 @@ Route::controller(AuthController::class)->group(function () {
             Route::post('/initialize', [PaymentController::class, 'initializePayment']);
             Route::post('/verify-payment/{transaction_id}', [PaymentController::class, 'verifyPayment']);
             
-            // Paystack payment routes
-            Route::post('/paystack/initialize', [PaystackPaymentController::class, 'initializePayment']);
-            Route::post('/paystack/verify/{reference}', [PaystackPaymentController::class, 'verifyPayment']);
-            
             // Common payment routes
             Route::get('/car-receipt/{car_slug}', [PaymentController::class, 'getCarPaymentReceipt']);
             Route::get('/receipt/{payment_slug}', [PaymentController::class, 'getPaymentReceipt']);
@@ -113,6 +108,8 @@ Route::controller(AuthController::class)->group(function () {
             Route::get('/transactions', [PaymentController::class, 'listUserTransactions']);
             Route::get('/all-receipts', [PaymentController::class, 'getAllReceipts']);
         });
+
+
       
 
 
@@ -157,13 +154,16 @@ Route::controller(AuthController::class)->group(function () {
        
     });
 
-    // Social authentication routes
-    Route::get('auth/{provider}', 'redirectToProvider');
-    Route::get('auth/{provider}/callback', 'handleProviderCallback');
+// Social authentication routes (public)
+Route::get('auth/{provider}', [AuthController::class, 'redirectToProvider']);
+Route::get('auth/{provider}/callback', [AuthController::class, 'handleProviderCallback']);
 
+// Paystack payment routes (public)
+Route::post('/paystack/initialize', [PaystackPaymentController::class, 'initializePayment']);
+Route::post('/paystack/verify/{reference}', [PaystackPaymentController::class, 'verifyPayment']);
+Route::get('/paystack/callback', [PaystackPaymentController::class, 'handleCallback']);
+Route::post('/paystack/webhook', [PaystackPaymentController::class, 'handleWebhook']);
 
-    
-});
 
 // Verification routes
 // Route::controller(VerificationController::class)->group(function () {

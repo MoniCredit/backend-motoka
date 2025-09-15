@@ -175,8 +175,10 @@ class AdminController extends Controller
             'total_agents' => Agent::count(),
             'active_agents' => Agent::where('status', 'active')->count(),
             'total_cars' => Car::count(),
-            'total_payments' => Payment::where('status', 'completed')->sum('amount'),
-            'pending_payments' => Payment::where('status', 'pending')->sum('amount'),
+            'total_amount' => Order::sum('amount'),
+            'completed_amount' => Order::where('status', 'completed')->sum('amount'),
+            'pending_amount' => Order::where('status', 'pending')->sum('amount'),
+            'declined_amount' => Order::where('status', 'declined')->sum('amount'),
         ];
 
         return response()->json([
@@ -244,7 +246,10 @@ class AdminController extends Controller
         }
 
         $order = Order::with(['user', 'car', 'payment', 'agent'])
-            ->where('slug', $slug)
+            ->leftJoin('states', 'orders.state', '=', 'states.id')
+            ->leftJoin('lgas', 'orders.lga', '=', 'lgas.id')
+            ->select('orders.*', 'states.state_name as state_name', 'lgas.lga_name as lga_name')
+            ->where('orders.slug', $slug)
             ->first();
 
         if (!$order) {
@@ -486,6 +491,13 @@ class AdminController extends Controller
     private function notifyAgent($order, $agent)
     {
         try {
+            // Get state and LGA names
+            $state = \App\Models\State::find($order->state);
+            $lga = \App\Models\Lga::find($order->lga);
+            
+            $stateName = $state ? $state->state_name : 'Unknown State';
+            $lgaName = $lga ? $lga->lga_name : 'Unknown LGA';
+            
             // WhatsApp notification (placeholder - you'd integrate with WhatsApp API)
             $whatsappMessage = "New Order Assigned!\n\n";
             $whatsappMessage .= "Order ID: {$order->slug}\n";
@@ -494,14 +506,16 @@ class AdminController extends Controller
             $whatsappMessage .= "Amount: ₦{$order->amount}\n";
             $whatsappMessage .= "Address: {$order->delivery_address}\n";
             $whatsappMessage .= "Contact: {$order->delivery_contact}\n";
-            $whatsappMessage .= "State: {$order->state}\n";
-            $whatsappMessage .= "LGA: {$order->lga}\n";
+            $whatsappMessage .= "State: {$stateName}\n";
+            $whatsappMessage .= "LGA: {$lgaName}\n";
 
             // Email notification
             $emailData = [
                 'agent' => $agent,
                 'order' => $order,
-                'whatsapp_message' => $whatsappMessage
+                'whatsapp_message' => $whatsappMessage,
+                'stateName' => $stateName,
+                'lgaName' => $lgaName
             ];
 
             Mail::send('emails.agent-order-notification', $emailData, function ($message) use ($agent, $order) {

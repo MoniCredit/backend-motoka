@@ -16,15 +16,24 @@ class CountrySeeder extends Seeder
     public function run(): void
     {
         foreach ($this->allGeoPoliticalZones() as $geo_political_zone) {
-            GeoPoliticalZone::updateOrCreate($geo_political_zone);
+            GeoPoliticalZone::updateOrCreate(
+                ['id' => $geo_political_zone['id']],
+                $geo_political_zone
+            );
         }
 
         foreach ($this->allStates() as $state) {
-            State::updateOrCreate($state);
+            State::updateOrCreate(
+                ['id' => $state['id']],
+                $state
+            );
         }
 
         foreach ($this->allStateLGA() as $lga) {
-            Lga::updateOrCreate($lga);
+            Lga::updateOrCreate(
+                ['id' => $lga['id']],
+                $lga
+            );
         }
     }
 
