@@ -277,6 +277,11 @@ Route::match(['get', 'post'], '/payment/paystack/callback', [PaystackPaymentCont
 // Public document viewing (for users to view their documents)
 Route::get('/orders/{orderSlug}/documents/{documentId}', [OrderDocumentController::class, 'viewDocument']);
 
+// Test CORS endpoint
+Route::get('/test-cors', function () {
+    return response()->json(['message' => 'CORS is working!', 'timestamp' => now()]);
+});
+
 // Admin authentication routes (public)
 Route::middleware(['cors'])->group(function () {
     Route::post('/admin/send-otp', [AdminController::class, 'sendAdminOTP']);
