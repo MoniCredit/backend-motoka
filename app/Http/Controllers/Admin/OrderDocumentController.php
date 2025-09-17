@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 use App\Mail\SendOrderDocuments;
 
 class OrderDocumentController extends Controller
@@ -19,24 +20,50 @@ class OrderDocumentController extends Controller
      */
     public function getDocumentTypes(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'order_type' => 'required|string'
-        ]);
+        try {
+            $validator = Validator::make($request->all(), [
+                'order_type' => 'required|string'
+            ]);
 
-        if ($validator->fails()) {
+            if ($validator->fails()) {
+                Log::error('Document types validation failed', [
+                    'errors' => $validator->errors(),
+                    'request_data' => $request->all()
+                ]);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 400);
+            }
+
+            $orderType = $request->order_type;
+            Log::info('Fetching document types for order_type', ['order_type' => $orderType]);
+
+            $documentTypes = OrderDocumentType::forOrderType($orderType)->get();
+            
+            Log::info('Document types found', [
+                'order_type' => $orderType,
+                'count' => $documentTypes->count(),
+                'types' => $documentTypes->toArray()
+            ]);
+
+            return response()->json([
+                'status' => true,
+                'data' => $documentTypes
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error fetching document types', [
+                'error' => $e->getMessage(),
+                'order_type' => $request->order_type ?? 'unknown'
+            ]);
+            
             return response()->json([
                 'status' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 400);
+                'message' => 'Error fetching document types',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $documentTypes = OrderDocumentType::forOrderType($request->order_type)->get();
-
-        return response()->json([
-            'status' => true,
-            'data' => $documentTypes
-        ]);
     }
 
     /**
@@ -44,19 +71,36 @@ class OrderDocumentController extends Controller
      */
     public function uploadDocuments(Request $request, $orderSlug)
     {
-        $validator = Validator::make($request->all(), [
-            'documents' => 'required|array',
-            'documents.*.document_type' => 'required|string',
-            'documents.*.file' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
-        ]);
+        try {
+            $validator = Validator::make($request->all(), [
+                'documents' => 'required|array|min:1|max:10', // Limit to 10 documents max
+                'documents.*.document_type' => 'required|string|max:255',
+                'documents.*.file' => 'required|file|mimes:pdf,jpg,jpeg,png,gif|max:10240', // 10MB max, added gif
+            ], [
+                'documents.required' => 'At least one document is required',
+                'documents.array' => 'Documents must be an array',
+                'documents.min' => 'At least one document is required',
+                'documents.max' => 'Maximum 10 documents allowed',
+                'documents.*.document_type.required' => 'Document type is required',
+                'documents.*.document_type.string' => 'Document type must be a string',
+                'documents.*.document_type.max' => 'Document type is too long',
+                'documents.*.file.required' => 'File is required',
+                'documents.*.file.file' => 'Must be a valid file',
+                'documents.*.file.mimes' => 'File must be PDF, JPG, JPEG, PNG, or GIF',
+                'documents.*.file.max' => 'File size must not exceed 10MB',
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 400);
-        }
+            if ($validator->fails()) {
+                Log::error('Document upload validation failed', [
+                    'errors' => $validator->errors(),
+                    'order_slug' => $orderSlug
+                ]);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 400);
+            }
 
         $order = Order::where('slug', $orderSlug)->first();
         if (!$order) {
@@ -68,36 +112,85 @@ class OrderDocumentController extends Controller
 
         $uploadedDocuments = [];
 
-        foreach ($request->documents as $document) {
-            $file = $document['file'];
-            $documentType = $document['document_type'];
+        foreach ($request->documents as $index => $document) {
+            try {
+                $file = $document['file'];
+                $documentType = $document['document_type'];
 
-            // Generate unique filename
-            $filename = time() . '_' . $documentType . '_' . $file->getClientOriginalName();
-            
-            // Create directory if it doesn't exist
-            $directory = public_path('images/order_documents/' . $orderSlug);
-            if (!file_exists($directory)) {
-                mkdir($directory, 0755, true);
+                // Additional security validations
+                $originalFilename = $file->getClientOriginalName();
+                $mimeType = $file->getMimeType();
+                $fileSize = $file->getSize();
+
+                // Validate file size (double check)
+                if ($fileSize > 10485760) { // 10MB in bytes
+                    throw new \Exception("File {$originalFilename} exceeds 10MB limit");
+                }
+
+                // Validate MIME type (double check)
+                $allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+                if (!in_array($mimeType, $allowedMimes)) {
+                    throw new \Exception("File {$originalFilename} has invalid MIME type: {$mimeType}");
+                }
+
+                // Sanitize filename
+                $sanitizedFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalFilename);
+                $sanitizedDocumentType = preg_replace('/[^a-zA-Z0-9._-]/', '_', $documentType);
+
+                // Generate unique filename with timestamp and random string
+                $uniqueId = uniqid();
+                $filename = time() . '_' . $uniqueId . '_' . $sanitizedDocumentType . '_' . $sanitizedFilename;
+                
+                // Create directory if it doesn't exist
+                $directory = public_path('images/order_documents/' . $orderSlug);
+                if (!file_exists($directory)) {
+                    if (!mkdir($directory, 0755, true)) {
+                        throw new \Exception("Failed to create directory: {$directory}");
+                    }
+                }
+                
+                // Move file to public/images directory
+                $file->move($directory, $filename);
+                $path = 'images/order_documents/' . $orderSlug . '/' . $filename;
+
+                // Verify file was moved successfully
+                if (!file_exists(public_path($path))) {
+                    throw new \Exception("File move failed for: {$originalFilename}");
+                }
+
+                // Create document record
+                $orderDocument = OrderDocument::create([
+                    'order_slug' => $orderSlug,
+                    'document_type' => $documentType,
+                    'file_path' => $path,
+                    'original_filename' => $originalFilename,
+                    'mime_type' => $mimeType,
+                    'file_size' => $fileSize,
+                    'uploaded_by' => 'admin',
+                    'status' => 'approved',
+                ]);
+
+                $uploadedDocuments[] = $orderDocument;
+                
+                Log::info('Document uploaded successfully', [
+                    'order_slug' => $orderSlug,
+                    'document_type' => $documentType,
+                    'filename' => $filename,
+                    'file_size' => $fileSize
+                ]);
+
+            } catch (\Exception $e) {
+                Log::error('Document upload error', [
+                    'error' => $e->getMessage(),
+                    'order_slug' => $orderSlug,
+                    'document_index' => $index,
+                    'document_type' => $document['document_type'] ?? 'unknown'
+                ]);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Error uploading document: ' . $e->getMessage()
+                ], 500);
             }
-            
-            // Move file to public/images directory
-            $file->move($directory, $filename);
-            $path = 'images/order_documents/' . $orderSlug . '/' . $filename;
-
-            // Create document record
-            $orderDocument = OrderDocument::create([
-                'order_slug' => $orderSlug,
-                'document_type' => $documentType,
-                'file_path' => $path,
-                'original_filename' => $file->getClientOriginalName(),
-                'mime_type' => $file->getMimeType(),
-                'file_size' => $file->getSize(),
-                'uploaded_by' => 'admin',
-                'status' => 'approved',
-            ]);
-
-            $uploadedDocuments[] = $orderDocument;
         }
 
         return response()->json([
@@ -105,6 +198,16 @@ class OrderDocumentController extends Controller
             'message' => 'Documents uploaded successfully',
             'data' => $uploadedDocuments
         ]);
+        } catch (\Exception $e) {
+            Log::error('Document upload process error', [
+                'error' => $e->getMessage(),
+                'order_slug' => $orderSlug
+            ]);
+            return response()->json([
+                'status' => false,
+                'message' => 'Error processing document upload: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -166,7 +269,7 @@ class OrderDocumentController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to send documents email: ' . $e->getMessage());
+            Log::error('Failed to send documents email: ' . $e->getMessage());
             
             return response()->json([
                 'status' => false,

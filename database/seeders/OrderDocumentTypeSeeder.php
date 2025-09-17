@@ -103,6 +103,43 @@ class OrderDocumentTypeSeeder extends Seeder
                 'is_required' => true,
                 'sort_order' => 4,
             ],
+            
+            // Proof of Ownership Documents
+            [
+                'order_type' => 'proof_of_ownership',
+                'document_name' => 'Vehicle Registration Certificate',
+                'document_key' => 'vehicle_registration_certificate',
+                'is_required' => true,
+                'sort_order' => 1,
+            ],
+            [
+                'order_type' => 'proof_of_ownership',
+                'document_name' => 'Purchase Receipt/Invoice',
+                'document_key' => 'purchase_receipt',
+                'is_required' => true,
+                'sort_order' => 2,
+            ],
+            [
+                'order_type' => 'proof_of_ownership',
+                'document_name' => 'Insurance Certificate',
+                'document_key' => 'insurance_certificate',
+                'is_required' => true,
+                'sort_order' => 3,
+            ],
+            [
+                'order_type' => 'proof_of_ownership',
+                'document_name' => 'Valid ID Card',
+                'document_key' => 'valid_id_card',
+                'is_required' => true,
+                'sort_order' => 4,
+            ],
+            [
+                'order_type' => 'proof_of_ownership',
+                'document_name' => 'Affidavit of Ownership',
+                'document_key' => 'affidavit_of_ownership',
+                'is_required' => false,
+                'sort_order' => 5,
+            ],
         ];
 
         foreach ($documentTypes as $type) {
