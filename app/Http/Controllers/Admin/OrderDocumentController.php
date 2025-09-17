@@ -260,6 +260,9 @@ class OrderDocumentController extends Controller
                 $message
             ));
 
+            // Update the order to mark documents as sent
+            $order->update(['documents_sent_at' => now()]);
+
             return response()->json([
                 'status' => true,
                 'message' => 'Documents sent to user successfully',

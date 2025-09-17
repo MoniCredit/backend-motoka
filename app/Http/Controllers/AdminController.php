@@ -359,6 +359,14 @@ class AdminController extends Controller
         $updateData = ['status' => $request->status];
         
         if ($request->status === 'completed') {
+            // Check if documents have been sent to the user
+            if (!$order->documents_sent_at) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Cannot complete order. Documents must be sent to the user first.'
+                ], 400);
+            }
+            
             $updateData['completed_at'] = now();
             
             // Update agent payment when order is completed

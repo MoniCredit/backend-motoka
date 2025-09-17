@@ -68,8 +68,13 @@ class SendOrderDocuments extends Mailable
             $filePath = public_path($document->file_path);
             
             if (file_exists($filePath)) {
+                // Create unique filename by combining document type with original filename
+                $extension = pathinfo($document->original_filename, PATHINFO_EXTENSION);
+                $cleanDocumentType = str_replace(' ', '_', $document->document_type);
+                $uniqueFilename = $cleanDocumentType . '_' . $document->original_filename;
+                
                 $attachments[] = Attachment::fromPath($filePath)
-                    ->as($document->original_filename)
+                    ->as($uniqueFilename)
                     ->withMime($document->mime_type);
             }
         }

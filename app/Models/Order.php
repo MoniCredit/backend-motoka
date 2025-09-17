@@ -29,6 +29,7 @@ class Order extends Model
         'processed_at',
         'processed_by',
         'completed_at',
+        'documents_sent_at',
     ];
 
     protected $casts = [
@@ -75,5 +76,10 @@ class Order extends Model
     public function agentPayments(): HasMany
     {
         return $this->hasMany(AgentPayment::class);
+    }
+
+    public function orderDocuments(): HasMany
+    {
+        return $this->hasMany(OrderDocument::class, 'order_slug', 'slug');
     }
 }
