@@ -12,6 +12,7 @@ class Agent extends Model
     use HasFactory;
 
     protected $fillable = [
+        'uuid',
         'slug',
         'first_name',
         'last_name',
@@ -35,6 +36,9 @@ class Agent extends Model
         parent::boot();
         
         static::creating(function ($agent) {
+            if (empty($agent->uuid)) {
+                $agent->uuid = Str::uuid();
+            }
             if (empty($agent->slug)) {
                 $agent->slug = Str::random(10);
             }

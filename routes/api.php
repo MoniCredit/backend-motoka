@@ -304,6 +304,9 @@ Route::middleware(['cors', 'auth:sanctum', 'admin'])->prefix('admin')->group(fun
     Route::get('/agents', [AdminController::class, 'getAgents']);
     Route::get('/agents/{slug}', [AdminController::class, 'getAgent']);
     Route::post('/agents', [AdminController::class, 'createAgent']);
+    Route::get('/agents/uuid/{uuid}', [AdminController::class, 'getAgentByUuid']);
+    Route::put('/agents/uuid/{uuid}/status', [AdminController::class, 'updateAgentStatus']);
+    Route::put('/agents/uuid/{uuid}', [AdminController::class, 'updateAgent']);
     
     // Cars
     Route::get('/cars', [AdminController::class, 'getCars']);
