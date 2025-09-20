@@ -644,22 +644,46 @@ class AdminController extends Controller
             if ($request->hasFile('profile_image')) {
                 $profileImage = $request->file('profile_image');
                 $profileImageName = time() . '_profile_' . $profileImage->getClientOriginalName();
-                $profileImage->storeAs('public/agents', $profileImageName);
-                $agentData['profile_image'] = 'agents/' . $profileImageName;
+                
+                // Create directory if it doesn't exist
+                $directory = public_path('images/agents');
+                if (!file_exists($directory)) {
+                    mkdir($directory, 0755, true);
+                }
+                
+                // Move file to public/images/agents directory
+                $profileImage->move($directory, $profileImageName);
+                $agentData['profile_image'] = 'images/agents/' . $profileImageName;
             }
 
             if ($request->hasFile('nin_front_image')) {
                 $ninFrontImage = $request->file('nin_front_image');
                 $ninFrontImageName = time() . '_nin_front_' . $ninFrontImage->getClientOriginalName();
-                $ninFrontImage->storeAs('public/agents', $ninFrontImageName);
-                $agentData['nin_front_image'] = 'agents/' . $ninFrontImageName;
+                
+                // Create directory if it doesn't exist
+                $directory = public_path('images/agents');
+                if (!file_exists($directory)) {
+                    mkdir($directory, 0755, true);
+                }
+                
+                // Move file to public/images/agents directory
+                $ninFrontImage->move($directory, $ninFrontImageName);
+                $agentData['nin_front_image'] = 'images/agents/' . $ninFrontImageName;
             }
 
             if ($request->hasFile('nin_back_image')) {
                 $ninBackImage = $request->file('nin_back_image');
                 $ninBackImageName = time() . '_nin_back_' . $ninBackImage->getClientOriginalName();
-                $ninBackImage->storeAs('public/agents', $ninBackImageName);
-                $agentData['nin_back_image'] = 'agents/' . $ninBackImageName;
+                
+                // Create directory if it doesn't exist
+                $directory = public_path('images/agents');
+                if (!file_exists($directory)) {
+                    mkdir($directory, 0755, true);
+                }
+                
+                // Move file to public/images/agents directory
+                $ninBackImage->move($directory, $ninBackImageName);
+                $agentData['nin_back_image'] = 'images/agents/' . $ninBackImageName;
             }
 
             $agent = \App\Models\Agent::create($agentData);
@@ -670,10 +694,266 @@ class AdminController extends Controller
                 'data' => $agent
             ], 201);
 
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $errors = $e->errors();
+            $errorMessages = [];
+            
+            // Convert validation errors to user-friendly messages
+            foreach ($errors as $field => $messages) {
+                foreach ($messages as $message) {
+                    if (str_contains($message, 'email') && str_contains($message, 'unique')) {
+                        $errorMessages[] = 'This email address is already registered. Please use a different email.';
+                    } elseif (str_contains($message, 'phone') && str_contains($message, 'unique')) {
+                        $errorMessages[] = 'This phone number is already registered. Please use a different phone number.';
+                    } elseif (str_contains($message, 'required')) {
+                        $fieldName = str_replace('_', ' ', $field);
+                        $errorMessages[] = ucfirst($fieldName) . ' is required.';
+                    } elseif (str_contains($message, 'email')) {
+                        $errorMessages[] = 'Please enter a valid email address.';
+                    } elseif (str_contains($message, 'max:')) {
+                        $errorMessages[] = ucfirst(str_replace('_', ' ', $field)) . ' is too long.';
+                    } else {
+                        $errorMessages[] = $message;
+                    }
+                }
+            }
+            
             return response()->json([
                 'status' => false,
-                'message' => 'Failed to create agent: ' . $e->getMessage()
+                'message' => implode(' ', $errorMessages),
+                'errors' => $errors
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Agent creation failed: ' . $e->getMessage(), [
+                'request_data' => $request->except(['profile_image', 'nin_front_image', 'nin_back_image']),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Provide specific error messages based on the exception
+            if (str_contains($e->getMessage(), 'email')) {
+                $message = 'Email address is already in use. Please use a different email.';
+            } elseif (str_contains($e->getMessage(), 'phone')) {
+                $message = 'Phone number is already in use. Please use a different phone number.';
+            } elseif (str_contains($e->getMessage(), 'file')) {
+                $message = 'File upload failed. Please check your file and try again.';
+            } else {
+                $message = 'Failed to create agent. Please check your information and try again.';
+            }
+            
+            return response()->json([
+                'status' => false,
+                'message' => $message
+            ], 500);
+        }
+    }
+
+    /**
+     * Get agent by UUID with pagination
+     */
+    public function getAgentByUuid($uuid)
+    {
+        try {
+            $agent = \App\Models\Agent::where('uuid', $uuid)->first();
+            
+            if (!$agent) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Agent not found'
+                ], 404);
+            }
+
+            // Get agent payments with pagination
+            $payments = $agent->agentPayments()
+                ->with('order')
+                ->orderBy('created_at', 'desc')
+                ->paginate(10);
+
+            // Get agent orders with pagination
+            $orders = $agent->orders()
+                ->orderBy('created_at', 'desc')
+                ->paginate(10);
+
+            return response()->json([
+                'status' => true,
+                'data' => [
+                    'agent' => $agent,
+                    'payments' => $payments,
+                    'orders' => $orders
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Get agent by UUID failed: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to fetch agent details'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update agent status (suspend/activate/delete)
+     */
+    public function updateAgentStatus(Request $request, $uuid)
+    {
+        try {
+            $agent = \App\Models\Agent::where('uuid', $uuid)->first();
+            
+            if (!$agent) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Agent not found'
+                ], 404);
+            }
+
+            $request->validate([
+                'status' => 'required|in:active,suspended,deleted'
+            ]);
+
+            $agent->status = $request->status;
+            $agent->save();
+
+            $statusMessages = [
+                'active' => 'Agent activated successfully',
+                'suspended' => 'Agent suspended successfully',
+                'deleted' => 'Agent deleted successfully'
+            ];
+
+            return response()->json([
+                'status' => true,
+                'message' => $statusMessages[$request->status],
+                'data' => $agent
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invalid status provided'
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Update agent status failed: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to update agent status'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update agent details
+     */
+    public function updateAgent(Request $request, $uuid)
+    {
+        try {
+            $agent = \App\Models\Agent::where('uuid', $uuid)->first();
+            
+            if (!$agent) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Agent not found'
+                ], 404);
+            }
+
+            $request->validate([
+                'first_name' => 'required|string|max:255',
+                'last_name' => 'required|string|max:255',
+                'email' => 'required|email|unique:agents,email,' . $agent->id,
+                'phone' => 'nullable|string|max:20',
+                'address' => 'required|string',
+                'state' => 'required|string',
+                'lga' => 'required|string',
+                'account_number' => 'nullable|string|max:20',
+                'bank_name' => 'nullable|string|max:255',
+                'account_name' => 'nullable|string|max:255',
+                'profile_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'nin_front_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'nin_back_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'notes' => 'nullable|string',
+            ]);
+
+            $agentData = $request->only([
+                'first_name', 'last_name', 'email', 'phone', 'address',
+                'state', 'lga', 'account_number', 'bank_name', 'account_name',
+                'notes'
+            ]);
+
+            // Handle file uploads
+            if ($request->hasFile('profile_image')) {
+                $profileImage = $request->file('profile_image');
+                $profileImageName = time() . '_profile_' . $profileImage->getClientOriginalName();
+                
+                // Create directory if it doesn't exist
+                $directory = public_path('images/agents');
+                if (!file_exists($directory)) {
+                    mkdir($directory, 0755, true);
+                }
+                
+                // Move file to public/images/agents directory
+                $profileImage->move($directory, $profileImageName);
+                $agentData['profile_image'] = 'images/agents/' . $profileImageName;
+            }
+
+            if ($request->hasFile('nin_front_image')) {
+                $ninFrontImage = $request->file('nin_front_image');
+                $ninFrontImageName = time() . '_nin_front_' . $ninFrontImage->getClientOriginalName();
+                
+                $directory = public_path('images/agents');
+                if (!file_exists($directory)) {
+                    mkdir($directory, 0755, true);
+                }
+                
+                $ninFrontImage->move($directory, $ninFrontImageName);
+                $agentData['nin_front_image'] = 'images/agents/' . $ninFrontImageName;
+            }
+
+            if ($request->hasFile('nin_back_image')) {
+                $ninBackImage = $request->file('nin_back_image');
+                $ninBackImageName = time() . '_nin_back_' . $ninBackImage->getClientOriginalName();
+                
+                $directory = public_path('images/agents');
+                if (!file_exists($directory)) {
+                    mkdir($directory, 0755, true);
+                }
+                
+                $ninBackImage->move($directory, $ninBackImageName);
+                $agentData['nin_back_image'] = 'images/agents/' . $ninBackImageName;
+            }
+
+            $agent->update($agentData);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Agent updated successfully',
+                'data' => $agent
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $errors = $e->errors();
+            $errorMessages = [];
+            
+            foreach ($errors as $field => $messages) {
+                foreach ($messages as $message) {
+                    if (str_contains($message, 'email') && str_contains($message, 'unique')) {
+                        $errorMessages[] = 'This email address is already registered. Please use a different email.';
+                    } elseif (str_contains($message, 'required')) {
+                        $fieldName = str_replace('_', ' ', $field);
+                        $errorMessages[] = ucfirst($fieldName) . ' is required.';
+                    } else {
+                        $errorMessages[] = $message;
+                    }
+                }
+            }
+            
+            return response()->json([
+                'status' => false,
+                'message' => implode(' ', $errorMessages),
+                'errors' => $errors
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Update agent failed: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to update agent'
             ], 500);
         }
     }
