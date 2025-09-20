@@ -12,21 +12,28 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('agents', function (Blueprint $table) {
-            $table->uuid('uuid')->nullable()->after('id');
-        });
+        // Check if uuid column already exists
+        if (!Schema::hasColumn('agents', 'uuid')) {
+            Schema::table('agents', function (Blueprint $table) {
+                $table->uuid('uuid')->nullable()->after('id');
+            });
+        }
 
-        // Generate UUIDs for existing records
-        $agents = \App\Models\Agent::all();
+        // Generate UUIDs for existing records that don't have them
+        $agents = \App\Models\Agent::whereNull('uuid')->get();
         foreach ($agents as $agent) {
             $agent->uuid = Str::uuid();
             $agent->save();
         }
 
-        // Now make it unique and not null
-        Schema::table('agents', function (Blueprint $table) {
-            $table->uuid('uuid')->unique()->nullable(false)->change();
-        });
+        // Now make it unique and not null (if not already)
+        try {
+            Schema::table('agents', function (Blueprint $table) {
+                $table->uuid('uuid')->unique()->nullable(false)->change();
+            });
+        } catch (\Exception $e) {
+            // Column might already be unique, continue
+        }
     }
 
     /**
