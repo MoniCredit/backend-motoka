@@ -88,4 +88,9 @@ class Car extends Model
     {
         return $this->belongsTo(User::class,'userId');
     }
+
+    public function orders()
+    {
+        return $this->hasMany(Order::class);
+    }
 }

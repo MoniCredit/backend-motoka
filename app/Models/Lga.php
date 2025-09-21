@@ -8,6 +8,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Lga extends Model
 {
     protected $guarded = [];
+    
+    protected $fillable = [
+        'lga_name',
+        'state_id',
+        'status',
+        'code'
+    ];
 
     /**
      * The attributes that should be cast to native types.

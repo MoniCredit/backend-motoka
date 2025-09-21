@@ -82,4 +82,14 @@ class Order extends Model
     {
         return $this->hasMany(OrderDocument::class, 'order_slug', 'slug');
     }
+
+    public function stateInfo(): BelongsTo
+    {
+        return $this->belongsTo(State::class, 'state', 'id');
+    }
+
+    public function lgaInfo(): BelongsTo
+    {
+        return $this->belongsTo(Lga::class, 'lga', 'id');
+    }
 }

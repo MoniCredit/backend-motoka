@@ -237,6 +237,17 @@ class CarController extends Controller
     {
         $user_id = Auth::user()->userId;
         $cars = Car::where('user_id', $user_id)
+            ->with([
+                'orders.orderDocuments' => function($query) {
+                    $query->where('status', 'approved');
+                },
+                'orders.user:id,userId,name,email',
+                'orders.car:id,slug,vehicle_make,vehicle_model,registration_no',
+                'orders.agent:id,uuid,first_name,last_name,email,phone',
+                'orders.stateInfo:id,state_name',
+                'orders.lgaInfo:id,lga_name,state_id',
+                'orders.processedBy:id,userId,name,email'
+            ])
             ->orderBy('created_at', 'asc')
             ->get();
 
@@ -275,7 +286,19 @@ class CarController extends Controller
      */
     public function show($slug)
     {
-        $car = Car::where('slug', $slug)->first();
+        $car = Car::where('slug', $slug)
+            ->with([
+                'orders.orderDocuments' => function($query) {
+                    $query->where('status', 'approved');
+                },
+                'orders.user:id,userId,name,email',
+                'orders.car:id,slug,vehicle_make,vehicle_model,registration_no',
+                'orders.agent:id,uuid,first_name,last_name,email,phone',
+                'orders.stateInfo:id,state_name',
+                'orders.lgaInfo:id,lga_name,state_id',
+                'orders.processedBy:id,userId,name,email'
+            ])
+            ->first();
         if (!$car) {
             return response()->json([
                 'status' => 'error',
@@ -570,7 +593,7 @@ private function handleReminder($userId, $expiryDate, $type, $refId)
         return;
     }
 
-    // If more than 30 days, delete existing reminders
+    // If more than 30 days, delete existing reminders (no reminder needed)
     if ($daysLeft > 30) {
         Reminder::where('user_id', $userId)
             ->where('type', $type)
@@ -722,6 +745,8 @@ public function getLgaByState($state_id)
                 unset($data[$field]);
             }
         }
+
+
 
         // Add complete reminder information directly to the car response
         $userId = Auth::user()->userId;
