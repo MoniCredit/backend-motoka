@@ -16,7 +16,7 @@ class AdminUserSeeder extends Seeder
     public function run(): void
     {
         $adminEmails = [
-            'sulaimontaofeek384@gmail.com', // Commented out - no longer admin
+            'sulaimontaofeek384@gmail.com', 
             'coolchi001@gmail.com',
             'rakiorasak@gmail.com',
             'ogunneyeoyinkansola@gmail.com',
@@ -36,10 +36,10 @@ class AdminUserSeeder extends Seeder
                     'name' => $this->generateAdminName($email),
                     'email' => $email,
                     'email_verified_at' => now(),
-                    'password' => Hash::make('admin123'), // Default password for admin
+                    'password' => Hash::make('admin123'), 
                     'phone_number' => null,
                     'user_type' => 'admin',
-                    'is_admin' => 1, // Use integer instead of boolean
+                    'is_admin' => 1,
                     'userId' => Str::random(6),
                     'remember_token' => Str::random(10),
                 ]
