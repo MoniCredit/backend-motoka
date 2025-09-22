@@ -16,13 +16,19 @@ class AdminUserSeeder extends Seeder
     public function run(): void
     {
         $adminEmails = [
-            'sulaimontaofeek384@gmail.com',
+            'sulaimontaofeek384@gmail.com', // Commented out - no longer admin
             'coolchi001@gmail.com',
             'rakiorasak@gmail.com',
             'ogunneyeoyinkansola@gmail.com',
             'njokudaniel664@gmail.com'
         ];
 
+        // First, remove admin privileges from users not in the current list
+        User::where('is_admin', 1)
+            ->whereNotIn('email', $adminEmails)
+            ->update(['is_admin' => 0]);
+
+        // Then create/update admin users
         foreach ($adminEmails as $email) {
             User::updateOrCreate(
                 ['email' => $email],
@@ -33,7 +39,7 @@ class AdminUserSeeder extends Seeder
                     'password' => Hash::make('admin123'), // Default password for admin
                     'phone_number' => null,
                     'user_type' => 'admin',
-                    'is_admin' => true,
+                    'is_admin' => 1, // Use integer instead of boolean
                     'userId' => Str::random(6),
                     'remember_token' => Str::random(10),
                 ]
@@ -42,6 +48,16 @@ class AdminUserSeeder extends Seeder
 
         $this->command->info('Admin users seeded successfully!');
         $this->command->info('Admin emails: ' . implode(', ', $adminEmails));
+        
+        // Show which users had admin privileges removed
+        $removedAdmins = User::where('is_admin', 0)
+            ->whereIn('email', ['sulaimontaofeek384@gmail.com'])
+            ->pluck('email')
+            ->toArray();
+            
+        if (!empty($removedAdmins)) {
+            $this->command->warn('Admin privileges removed from: ' . implode(', ', $removedAdmins));
+        }
     }
 
     private function generateAdminName($email)
