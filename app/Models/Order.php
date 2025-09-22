@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class Order extends Model
@@ -28,6 +29,7 @@ class Order extends Model
         'processed_at',
         'processed_by',
         'completed_at',
+        'documents_sent_at',
     ];
 
     protected $casts = [
@@ -69,5 +71,25 @@ class Order extends Model
     public function processedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'processed_by');
+    }
+
+    public function agentPayments(): HasMany
+    {
+        return $this->hasMany(AgentPayment::class);
+    }
+
+    public function orderDocuments(): HasMany
+    {
+        return $this->hasMany(OrderDocument::class, 'order_slug', 'slug');
+    }
+
+    public function stateInfo(): BelongsTo
+    {
+        return $this->belongsTo(State::class, 'state', 'id');
+    }
+
+    public function lgaInfo(): BelongsTo
+    {
+        return $this->belongsTo(Lga::class, 'lga', 'id');
     }
 }

@@ -17,6 +17,7 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PaystackPaymentController;
 use App\Http\Controllers\PaymentScheduleController;
 use App\Http\Controllers\KycController;
+use App\Http\Controllers\Admin\OrderDocumentController;
 use App\Models\Car;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Route;
@@ -273,13 +274,23 @@ Route::post('/payment/paystack/webhook', [PaystackPaymentController::class, 'han
 // Paystack callback (public - no auth required)
 Route::match(['get', 'post'], '/payment/paystack/callback', [PaystackPaymentController::class, 'handleCallback']);
 
+// Public document viewing (for users to view their documents)
+Route::get('/orders/{orderSlug}/documents/{documentId}', [OrderDocumentController::class, 'viewDocument']);
+
+// Test CORS endpoint
+Route::get('/test-cors', function () {
+    return response()->json(['message' => 'CORS is working!', 'timestamp' => now()]);
+});
+
 // Admin authentication routes (public)
-Route::post('/admin/send-otp', [AdminController::class, 'sendAdminOTP']);
-Route::post('/admin/verify-otp', [AdminController::class, 'verifyAdminOTP']);
-Route::post('/admin/clear-rate-limiters', [AdminController::class, 'clearRateLimiters']); // For testing only
+Route::middleware(['cors'])->group(function () {
+    Route::post('/admin/send-otp', [AdminController::class, 'sendAdminOTP']);
+    Route::post('/admin/verify-otp', [AdminController::class, 'verifyAdminOTP']);
+    Route::post('/admin/clear-rate-limiters', [AdminController::class, 'clearRateLimiters']); // For testing only
+});
 
 // Admin protected routes
-Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+Route::middleware(['cors', 'auth:sanctum', 'admin'])->prefix('admin')->group(function () {
     // Dashboard
     Route::get('/dashboard/stats', [AdminController::class, 'getDashboardStats']);
     
@@ -293,6 +304,9 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/agents', [AdminController::class, 'getAgents']);
     Route::get('/agents/{slug}', [AdminController::class, 'getAgent']);
     Route::post('/agents', [AdminController::class, 'createAgent']);
+    Route::get('/agents/uuid/{uuid}', [AdminController::class, 'getAgentByUuid']);
+    Route::put('/agents/uuid/{uuid}/status', [AdminController::class, 'updateAgentStatus']);
+    Route::put('/agents/uuid/{uuid}', [AdminController::class, 'updateAgent']);
     
     // Cars
     Route::get('/cars', [AdminController::class, 'getCars']);
@@ -304,5 +318,16 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     // Dashboard data
     Route::get('/recent-orders', [AdminController::class, 'getRecentOrders']);
     Route::get('/recent-transactions', [AdminController::class, 'getRecentTransactions']);
+    
+    // Order Documents
+    Route::get('/document-types', [OrderDocumentController::class, 'getDocumentTypes']);
+    Route::post('/orders/{orderSlug}/documents', [OrderDocumentController::class, 'uploadDocuments']);
+    Route::post('/orders/{orderSlug}/send-documents', [OrderDocumentController::class, 'sendDocumentsToUser']);
+    Route::get('/orders/{orderSlug}/documents', [OrderDocumentController::class, 'getOrderDocuments']);
+    Route::get('/orders/{orderSlug}/documents/{documentId}', [OrderDocumentController::class, 'viewDocument']);
+    
+    // Agent Payments
+    Route::get('/agent-payments', [AdminController::class, 'getAllAgentPayments']);
+    Route::get('/agents/{agentId}/payments', [AdminController::class, 'getAgentPayments']);
 });
 

@@ -12,6 +12,7 @@ class Agent extends Model
     use HasFactory;
 
     protected $fillable = [
+        'uuid',
         'slug',
         'first_name',
         'last_name',
@@ -23,7 +24,6 @@ class Agent extends Model
         'account_number',
         'bank_name',
         'account_name',
-        'amount_to_pay',
         'profile_image',
         'nin_front_image',
         'nin_back_image',
@@ -36,6 +36,9 @@ class Agent extends Model
         parent::boot();
         
         static::creating(function ($agent) {
+            if (empty($agent->uuid)) {
+                $agent->uuid = Str::uuid();
+            }
             if (empty($agent->slug)) {
                 $agent->slug = Str::random(10);
             }
@@ -45,6 +48,11 @@ class Agent extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    public function agentPayments(): HasMany
+    {
+        return $this->hasMany(AgentPayment::class);
     }
 
     public function getFullNameAttribute()

@@ -9,6 +9,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class State extends Model
 {
     protected $guarded = [];
+    
+    protected $fillable = [
+        'state_name',
+        'geo_political_zone_id',
+        'status'
+    ];
 
     /**
      * The attributes that should be cast to native types.
