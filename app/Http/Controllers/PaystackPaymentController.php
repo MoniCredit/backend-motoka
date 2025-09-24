@@ -116,7 +116,7 @@ class PaystackPaymentController extends Controller
             'amount' => $totalAmount * 100, // Paystack expects amount in kobo
             'reference' => $transaction_id,
             'currency' => 'NGN',
-            'callback_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/payment/paystack/callback',
+            'callback_url' => env('FRONTEND_URL', 'https://motoka.vercel.app') . '/payment/paystack/callback',
             'metadata' => [
                 'user_id' => $user->id,
                 'car_id' => $car->id,
