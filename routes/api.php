@@ -101,6 +101,10 @@ Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOTP']);
             Route::post('/initialize', [PaymentController::class, 'initializePayment']);
             Route::post('/verify-payment/{transaction_id}', [PaymentController::class, 'verifyPayment']);
             
+            // Paystack payment routes
+            Route::get('/paystack/reference/{transaction_id}', [PaystackPaymentController::class, 'getPaystackReference']);
+            Route::post('/paystack/verify/{reference}', [PaystackPaymentController::class, 'verifyPayment']);
+            
             // Common payment routes
             Route::get('/car-receipt/{car_slug}', [PaymentController::class, 'getCarPaymentReceipt']);
             Route::get('/receipt/{payment_slug}', [PaymentController::class, 'getPaymentReceipt']);
@@ -161,7 +165,6 @@ Route::get('auth/{provider}/callback', [AuthController::class, 'handleProviderCa
 
 // Paystack payment routes (public)
 Route::post('/paystack/initialize', [PaystackPaymentController::class, 'initializePayment']);
-Route::post('/paystack/verify/{reference}', [PaystackPaymentController::class, 'verifyPayment']);
 Route::get('/paystack/callback', [PaystackPaymentController::class, 'handleCallback']);
 Route::post('/paystack/webhook', [PaystackPaymentController::class, 'handleWebhook']);
 
