@@ -717,21 +717,43 @@ private function createOrderFromPayment($payment, $car, $user)
 /**
  * Check for existing payments for the same document type
  */
-public function checkExistingPayments(Request $request)
-{
-    $request->validate([
-        'car_slug' => 'required|string',
-        'payment_schedule_ids' => 'required|array',
-        'payment_schedule_ids.*' => 'integer|exists:payment_schedules,id'
-    ]);
+    public function checkExistingPayments(Request $request)
+    {
+        \Log::info('🔍 checkExistingPayments API called', [
+            'request_data' => $request->all(),
+            'user_authenticated' => Auth::check(),
+            'user_id' => Auth::id()
+        ]);
 
-    $user = Auth::user();
+        $request->validate([
+            'car_slug' => 'required|string',
+            'payment_schedule_ids' => 'required|array',
+            'payment_schedule_ids.*' => 'integer|exists:payment_schedules,id'
+        ]);
+
+        $user = Auth::user();
+        
+        \Log::info('👤 User details', [
+            'user_id' => $user ? $user->id : null,
+            'user_userId' => $user ? $user->userId : null
+        ]);
     
     $car = \App\Models\Car::where('slug', $request->car_slug)
         ->where('user_id', $user->userId) // Use userId field instead of id
         ->first();
 
+    \Log::info('🚗 Car lookup result', [
+        'car_slug' => $request->car_slug,
+        'user_userId' => $user->userId,
+        'car_found' => $car ? true : false,
+        'car_id' => $car ? $car->id : null
+    ]);
+
     if (!$car) {
+        \Log::error('❌ Car not found', [
+            'car_slug' => $request->car_slug,
+            'user_userId' => $user->userId
+        ]);
         return response()->json([
             'status' => false,
             'message' => 'Car not found'
@@ -779,15 +801,24 @@ public function checkExistingPayments(Request $request)
         }
     }
 
-    return response()->json([
-        'status' => true,
-        'data' => [
-            'existing_payments' => $existingPayments,
-            'available_schedules' => $availableSchedules,
+        $response = [
+            'status' => true,
+            'data' => [
+                'existing_payments' => $existingPayments,
+                'available_schedules' => $availableSchedules,
+                'has_duplicates' => count($existingPayments) > 0,
+                'can_proceed' => count($availableSchedules) > 0
+            ]
+        ];
+
+        \Log::info('✅ checkExistingPayments response', [
+            'existing_payments_count' => count($existingPayments),
+            'available_schedules_count' => count($availableSchedules),
             'has_duplicates' => count($existingPayments) > 0,
             'can_proceed' => count($availableSchedules) > 0
-        ]
-    ]);
+        ]);
+
+        return response()->json($response);
 }
 
 /**
