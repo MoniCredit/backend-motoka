@@ -140,6 +140,66 @@ class OrderDocumentTypeSeeder extends Seeder
                 'is_required' => false,
                 'sort_order' => 5,
             ],
+            
+            // Insurance Documents
+            [
+                'order_type' => 'insurance',
+                'document_name' => 'Insurance Certificate',
+                'document_key' => 'insurance_certificate',
+                'is_required' => true,
+                'sort_order' => 1,
+            ],
+            [
+                'order_type' => 'insurance',
+                'document_name' => 'Vehicle Registration',
+                'document_key' => 'vehicle_registration',
+                'is_required' => true,
+                'sort_order' => 2,
+            ],
+            [
+                'order_type' => 'insurance',
+                'document_name' => 'Valid ID Card',
+                'document_key' => 'valid_id_card',
+                'is_required' => true,
+                'sort_order' => 3,
+            ],
+            [
+                'order_type' => 'insurance',
+                'document_name' => 'Driver\'s License',
+                'document_key' => 'drivers_license',
+                'is_required' => true,
+                'sort_order' => 4,
+            ],
+            
+            // License Renewal Documents
+            [
+                'order_type' => 'license_renewal',
+                'document_name' => 'Old License',
+                'document_key' => 'old_license',
+                'is_required' => true,
+                'sort_order' => 1,
+            ],
+            [
+                'order_type' => 'license_renewal',
+                'document_name' => 'Insurance Certificate',
+                'document_key' => 'insurance_certificate',
+                'is_required' => true,
+                'sort_order' => 2,
+            ],
+            [
+                'order_type' => 'license_renewal',
+                'document_name' => 'Vehicle Registration',
+                'document_key' => 'vehicle_registration',
+                'is_required' => true,
+                'sort_order' => 3,
+            ],
+            [
+                'order_type' => 'license_renewal',
+                'document_name' => 'Valid ID Card',
+                'document_key' => 'valid_id_card',
+                'is_required' => true,
+                'sort_order' => 4,
+            ],
         ];
 
         foreach ($documentTypes as $type) {
