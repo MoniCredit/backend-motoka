@@ -13,17 +13,17 @@ use Illuminate\Support\Facades\Log;
 class PaystackPaymentController extends Controller
 {
     /**
-     * Initialize Paystack payment for car renewal
+     * Initialize Paystack payment for car renewal (single or bulk)
      */
     public function initializePayment(Request $request)
     {
         $user = Auth::user();
         $transaction_id = Str::random(10);
 
-        // Validation: car_slug is required
+        // Validation: car_slug is required, payment_schedule_id can be array for bulk payments
         $request->validate([
             'car_slug' => 'required|exists:cars,slug',
-            'payment_schedule_id' => 'required|exists:payment_schedules,id',
+            'payment_schedule_id' => 'required', // Can be single ID or array
             'meta_data' => 'nullable|array',
         ]);
 
@@ -39,28 +39,46 @@ class PaystackPaymentController extends Controller
             ], 422);
         }
 
-        $getPaymentSchedule = PaymentSchedule::with(['payment_head', 'revenue_head'])->find($request->payment_schedule_id);
-        if (!$getPaymentSchedule) {
-            return response()->json(['message' => 'Invalid payment_schedule_id'], 400);
+        // Handle both single and multiple payment schedules
+        $paymentScheduleIds = is_array($request->payment_schedule_id) 
+            ? $request->payment_schedule_id 
+            : [$request->payment_schedule_id];
+
+        // Validate all payment schedule IDs exist
+        $paymentSchedules = PaymentSchedule::with(['payment_head', 'revenue_head'])
+            ->whereIn('id', $paymentScheduleIds)
+            ->get();
+
+        if ($paymentSchedules->count() !== count($paymentScheduleIds)) {
+            return response()->json(['message' => 'One or more payment schedule IDs are invalid'], 400);
         }
-        if (!$getPaymentSchedule->payment_head || !$getPaymentSchedule->revenue_head) {
-            return response()->json(['message' => 'Payment schedule is missing payment head or revenue head'], 400);
+
+        // Validate all schedules have required relationships
+        foreach ($paymentSchedules as $schedule) {
+            if (!$schedule->payment_head || !$schedule->revenue_head) {
+                return response()->json([
+                    'message' => 'Payment schedule ID ' . $schedule->id . ' is missing payment head or revenue head'
+                ], 400);
+            }
         }
 
         // --- Car type/payment schedule validation ---
         $privateScheduleIds = [1, 2, 3, 4]; // Update with your actual IDs for private
         $commercialScheduleIds = [1, 2, 3, 4, 5]; // Update with your actual IDs for commercial
-        if ($car->car_type === 'private' && !in_array($request->payment_schedule_id, $privateScheduleIds)) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Invalid payment_schedule_id for private car type.'
-            ], 400);
-        }
-        if ($car->car_type === 'commercial' && !in_array($request->payment_schedule_id, $commercialScheduleIds)) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Invalid payment_schedule_id for commercial car type.'
-            ], 400);
+        
+        foreach ($paymentScheduleIds as $scheduleId) {
+            if ($car->car_type === 'private' && !in_array($scheduleId, $privateScheduleIds)) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid payment_schedule_id ' . $scheduleId . ' for private car type.'
+                ], 400);
+            }
+            if ($car->car_type === 'commercial' && !in_array($scheduleId, $commercialScheduleIds)) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid payment_schedule_id ' . $scheduleId . ' for commercial car type.'
+                ], 400);
+            }
         }
 
         // Access control: Only allow payment for cars owned by the user
@@ -88,15 +106,17 @@ class PaystackPaymentController extends Controller
             ], 400);
         }
 
-        // Calculate total amount: payment schedule amount + delivery fee
-        $baseAmount = $getPaymentSchedule->amount;
+        // Calculate total amount: sum of all payment schedule amounts + delivery fee
+        $baseAmount = $paymentSchedules->sum('amount');
         $totalAmount = $baseAmount + $deliveryFee;
 
-        // Create payment record
+        // Create payment record with bulk payment support
         $payment = Payment::create([
             'user_id' => $user->id,
             'car_id' => $car->id,
-            'payment_schedule_id' => $request->payment_schedule_id,
+            'payment_schedule_id' => is_array($request->payment_schedule_id) 
+                ? json_encode($request->payment_schedule_id) 
+                : $request->payment_schedule_id,
             'amount' => $totalAmount,
             'transaction_id' => $transaction_id,
             'status' => 'pending',
@@ -105,8 +125,16 @@ class PaystackPaymentController extends Controller
                 'delivery_fee' => $deliveryFee,
                 'base_amount' => $baseAmount,
                 'car_slug' => $car->slug,
-                'payment_head_name' => $getPaymentSchedule->payment_head->payment_head_name,
-                'revenue_head_code' => $getPaymentSchedule->revenue_head->revenue_head_code,
+                'payment_schedule_ids' => $paymentScheduleIds,
+                'payment_schedules' => $paymentSchedules->map(function($schedule) {
+                    return [
+                        'id' => $schedule->id,
+                        'amount' => $schedule->amount,
+                        'payment_head_name' => $schedule->payment_head->payment_head_name,
+                        'revenue_head_code' => $schedule->revenue_head->revenue_head_code,
+                    ];
+                })->toArray(),
+                'is_bulk_payment' => count($paymentScheduleIds) > 1,
             ])),
         ]);
 
@@ -116,16 +144,23 @@ class PaystackPaymentController extends Controller
             'amount' => $totalAmount * 100, // Paystack expects amount in kobo
             'reference' => $transaction_id,
             'currency' => 'NGN',
-            'callback_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/payment/paystack/callback',
+            'callback_url' => env('FRONTEND_URL', 'https://localhost:3000') . '/payment/paystack/callback',
             'metadata' => [
                 'user_id' => $user->id,
                 'car_id' => $car->id,
                 'car_slug' => $car->slug,
-                'payment_schedule_id' => $request->payment_schedule_id,
+                'payment_schedule_ids' => $paymentScheduleIds,
                 'delivery_fee' => $deliveryFee,
                 'base_amount' => $baseAmount,
-                'payment_head_name' => $getPaymentSchedule->payment_head->payment_head_name,
-                'revenue_head_code' => $getPaymentSchedule->revenue_head->revenue_head_code,
+                'is_bulk_payment' => count($paymentScheduleIds) > 1,
+                'payment_schedules' => $paymentSchedules->map(function($schedule) {
+                    return [
+                        'id' => $schedule->id,
+                        'amount' => $schedule->amount,
+                        'payment_head_name' => $schedule->payment_head->payment_head_name,
+                        'revenue_head_code' => $schedule->revenue_head->revenue_head_code,
+                    ];
+                })->toArray(),
             ],
         ];
 
@@ -210,6 +245,54 @@ class PaystackPaymentController extends Controller
     }
 
     /**
+     * Get Paystack reference by transaction ID
+     */
+    public function getPaystackReference(Request $request, $transactionId)
+    {
+        $user = Auth::user();
+        
+        try {
+            // Find the payment record with the given transaction ID
+            $payment = Payment::where('transaction_id', $transactionId)
+                ->where('user_id', $user->id)
+                ->where('payment_gateway', 'paystack')
+                ->first();
+            
+            if (!$payment) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment record not found or you are not authorized to access this payment'
+                ], 404);
+            }
+            
+            if (!$payment->gateway_reference) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Paystack reference not found for this payment'
+                ], 404);
+            }
+            
+            return response()->json([
+                'status' => true,
+                'message' => 'Paystack reference found',
+                'data' => [
+                    'transaction_id' => $payment->transaction_id,
+                    'gateway_reference' => $payment->gateway_reference,
+                    'amount' => $payment->amount,
+                    'status' => $payment->status
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to get Paystack reference',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Verify Paystack payment (Secured against IDOR)
      */
     public function verifyPayment(Request $request, $reference)
@@ -280,6 +363,17 @@ class PaystackPaymentController extends Controller
 
                     // Create order for admin processing (only if not already created)
                     $this->createOrderFromPayment($payment, $car, $user);
+                    
+                    // Verify orders were created
+                    $orderCount = \App\Models\Order::where('payment_id', $payment->id)->count();
+                    if ($orderCount === 0) {
+                        // If no orders created, try again with error logging
+                        \Log::error('No orders created for payment, retrying...', [
+                            'payment_id' => $payment->id,
+                            'gateway_reference' => $payment->gateway_reference
+                        ]);
+                        $this->createOrderFromPayment($payment, $car, $user);
+                    }
 
                     // Handle reminders (same logic as Monicredit)
                     $userModel = \App\Models\User::find($payment->user_id);
@@ -667,26 +761,17 @@ class PaystackPaymentController extends Controller
     }
 
     /**
-     * Create order from successful payment
+     * Create order(s) from successful payment (supports bulk payments)
      */
     private function createOrderFromPayment($payment, $car, $user)
     {
         try {
-            // Check if order already exists for this payment to prevent duplicates
-            $existingOrder = \App\Models\Order::where('payment_id', $payment->id)->first();
-            if ($existingOrder) {
-                // Order already exists, no need to create another one
+            // Check if orders already exist for this payment to prevent duplicates
+            $existingOrders = \App\Models\Order::where('payment_id', $payment->id)->count();
+            if ($existingOrders > 0) {
+                // Orders already exist for this payment, no need to create more
                 return;
             }
-
-            // Get payment schedule details
-            $paymentSchedule = $payment->paymentSchedule;
-            if (!$paymentSchedule) {
-                return;
-            }
-
-            // Determine order type based on payment head
-            $orderType = $this->getOrderTypeFromPaymentHead($paymentSchedule->payment_head->payment_head_name);
 
             // Get delivery address from payment metadata or car/user
             $metaData = is_string($payment->meta_data) ? json_decode($payment->meta_data, true) : $payment->meta_data;
@@ -695,27 +780,122 @@ class PaystackPaymentController extends Controller
             $stateId = $metaData['state_id'] ?? null;
             $lgaId = $metaData['lga_id'] ?? null;
 
-            // Create order
-            \App\Models\Order::create([
-                'slug' => \Illuminate\Support\Str::uuid(),
-                'user_id' => $user->id,
-                'car_id' => $car->id,
-                'payment_id' => $payment->id,
-                'order_type' => $orderType,
-                'status' => 'pending',
-                'amount' => $payment->amount,
-                'delivery_address' => $deliveryAddress,
-                'delivery_contact' => $deliveryContact,
-                'state' => $stateId,
-                'lga' => $lgaId,
-                'notes' => "Payment via {$payment->payment_gateway} - {$paymentSchedule->payment_head->payment_head_name}",
-            ]);
+            // Check if this is a bulk payment
+            $isBulkPayment = $metaData['is_bulk_payment'] ?? false;
+            $paymentSchedules = $metaData['payment_schedules'] ?? [];
+            
+            // Handle JSON string for payment_schedule_id
+            $paymentScheduleIdData = $payment->payment_schedule_id;
+            if (is_string($paymentScheduleIdData)) {
+                $decodedIds = json_decode($paymentScheduleIdData, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decodedIds)) {
+                    $isBulkPayment = count($decodedIds) > 1;
+                    if ($isBulkPayment && empty($paymentSchedules)) {
+                        // If we have multiple IDs but no schedules in meta_data, fetch them
+                        $paymentSchedules = \App\Models\PaymentSchedule::with(['payment_head', 'revenue_head'])
+                            ->whereIn('id', $decodedIds)
+                            ->get()
+                            ->map(function($schedule) {
+                                return [
+                                    'id' => $schedule->id,
+                                    'amount' => $schedule->amount,
+                                    'payment_head_name' => $schedule->payment_head->payment_head_name,
+                                    'revenue_head_code' => $schedule->revenue_head->revenue_head_code,
+                                ];
+                            })->toArray();
+                    }
+                }
+            }
+
+            if ($isBulkPayment && !empty($paymentSchedules)) {
+                // Create separate orders for each payment schedule in bulk payment
+                foreach ($paymentSchedules as $scheduleData) {
+                    $orderType = $this->getOrderTypeFromPaymentHead($scheduleData['payment_head_name']);
+                    
+                    \App\Models\Order::create([
+                        'slug' => \Illuminate\Support\Str::uuid(),
+                        'user_id' => $user->id,
+                        'car_id' => $car->id,
+                        'payment_id' => $payment->id,
+                        'order_type' => $orderType,
+                        'status' => 'pending',
+                        'amount' => $scheduleData['amount'],
+                        'delivery_address' => $deliveryAddress,
+                        'delivery_contact' => $deliveryContact,
+                        'state' => $stateId,
+                        'lga' => $lgaId,
+                        'notes' => "Bulk payment via {$payment->payment_gateway} - {$scheduleData['payment_head_name']} (Schedule ID: {$scheduleData['id']})",
+                    ]);
+                }
+            } else {
+                // Single payment - handle JSON array properly
+                $paymentScheduleIdData = $payment->payment_schedule_id;
+                
+                // Handle both JSON string and array
+                if (is_string($paymentScheduleIdData)) {
+                    $paymentScheduleIds = json_decode($paymentScheduleIdData, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        // If not valid JSON, treat as single ID
+                        $paymentScheduleIds = [$paymentScheduleIdData];
+                    }
+                } else {
+                    $paymentScheduleIds = is_array($paymentScheduleIdData) 
+                        ? $paymentScheduleIdData 
+                        : [$paymentScheduleIdData];
+                }
+                
+                if (empty($paymentScheduleIds)) {
+                    Log::error('No payment schedule IDs found for single payment', [
+                        'payment_id' => $payment->id,
+                        'payment_schedule_id' => $payment->payment_schedule_id
+                    ]);
+                    return;
+                }
+
+                // Get the payment schedule
+                $paymentSchedule = \App\Models\PaymentSchedule::with('payment_head')
+                    ->find($paymentScheduleIds[0]);
+                    
+                if (!$paymentSchedule) {
+                    Log::error('Payment schedule not found', [
+                        'payment_id' => $payment->id,
+                        'schedule_id' => $paymentScheduleIds[0]
+                    ]);
+                    return;
+                }
+
+                // Determine order type based on payment head
+                $orderType = $this->getOrderTypeFromPaymentHead($paymentSchedule->payment_head->payment_head_name);
+
+                // Create order
+                \App\Models\Order::create([
+                    'slug' => \Illuminate\Support\Str::uuid(),
+                    'user_id' => $user->id,
+                    'car_id' => $car->id,
+                    'payment_id' => $payment->id,
+                    'order_type' => $orderType,
+                    'status' => 'pending',
+                    'amount' => $payment->amount,
+                    'delivery_address' => $deliveryAddress,
+                    'delivery_contact' => $deliveryContact,
+                    'state' => $stateId,
+                    'lga' => $lgaId,
+                    'notes' => "Payment via {$payment->payment_gateway} - {$paymentSchedule->payment_head->payment_head_name}",
+                ]);
+            }
 
         } catch (\Exception $e) {
             Log::error('Failed to create order from payment', [
                 'payment_id' => $payment->id,
-                'error' => $e->getMessage()
+                'gateway_reference' => $payment->gateway_reference ?? 'N/A',
+                'car_id' => $payment->car_id,
+                'user_id' => $payment->user_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
+            
+            // Re-throw the exception so the calling code knows it failed
+            throw $e;
         }
     }
 
