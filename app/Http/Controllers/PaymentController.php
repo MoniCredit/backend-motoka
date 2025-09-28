@@ -18,10 +18,10 @@ class PaymentController extends Controller
     $user = Auth::user();
     $transaction_id = Str::random(10);
 
-    // Validation: car_slug is required
+    // Validation: car_slug is required, payment_schedule_id can be array for bulk payments
     $request->validate([
         'car_slug' => 'required|exists:cars,slug',
-        'payment_schedule_id' => 'required|exists:payment_schedules,id',
+        'payment_schedule_id' => 'required', // Can be single ID or array
         'meta_data' => 'nullable|array',
     ]);
 
@@ -37,29 +37,46 @@ class PaymentController extends Controller
         ], 422);
     }
 
-    $getPaymentSchedule = PaymentSchedule::with(['payment_head', 'revenue_head'])->find($request->payment_schedule_id);
-    if (!$getPaymentSchedule) {
-        return response()->json(['message' => 'Invalid payment_schedule_id'], 400);
+    // Handle both single and multiple payment schedules
+    $paymentScheduleIds = is_array($request->payment_schedule_id) 
+        ? $request->payment_schedule_id 
+        : [$request->payment_schedule_id];
+
+    // Validate all payment schedule IDs exist
+    $paymentSchedules = PaymentSchedule::with(['payment_head', 'revenue_head'])
+        ->whereIn('id', $paymentScheduleIds)
+        ->get();
+
+    if ($paymentSchedules->count() !== count($paymentScheduleIds)) {
+        return response()->json(['message' => 'One or more payment schedule IDs are invalid'], 400);
     }
-    if (!$getPaymentSchedule->payment_head || !$getPaymentSchedule->revenue_head) {
-        return response()->json(['message' => 'Payment schedule is missing payment head or revenue head'], 400);
+
+    // Validate all schedules have required relationships
+    foreach ($paymentSchedules as $schedule) {
+        if (!$schedule->payment_head || !$schedule->revenue_head) {
+            return response()->json([
+                'message' => 'Payment schedule ID ' . $schedule->id . ' is missing payment head or revenue head'
+            ], 400);
+        }
     }
 
     // --- Car type/payment schedule validation ---
-    // Define allowed payment_schedule_ids for each car_type
     $privateScheduleIds = [1, 2, 3, 4]; // Update with your actual IDs for private
     $commercialScheduleIds = [1, 2, 3, 4, 5]; // Update with your actual IDs for commercial
-    if ($car->car_type === 'private' && !in_array($request->payment_schedule_id, $privateScheduleIds)) {
+    
+    foreach ($paymentScheduleIds as $scheduleId) {
+        if ($car->car_type === 'private' && !in_array($scheduleId, $privateScheduleIds)) {
         return response()->json([
             'status' => false,
-            'message' => 'Invalid payment_schedule_id for private car type.'
+                'message' => 'Invalid payment_schedule_id ' . $scheduleId . ' for private car type.'
         ], 400);
     }
-    if ($car->car_type === 'commercial' && !in_array($request->payment_schedule_id, $commercialScheduleIds)) {
+        if ($car->car_type === 'commercial' && !in_array($scheduleId, $commercialScheduleIds)) {
         return response()->json([
             'status' => false,
-            'message' => 'Invalid payment_schedule_id for commercial car type.'
+                'message' => 'Invalid payment_schedule_id ' . $scheduleId . ' for commercial car type.'
         ], 400);
+        }
     }
     // --- End car type/payment schedule validation ---
 
@@ -88,17 +105,28 @@ class PaymentController extends Controller
         ], 400);
     }
 
-    // Calculate total amount: payment schedule amount + delivery fee
-    $baseAmount = $getPaymentSchedule->amount;
+    // Calculate total amount: sum of all payment schedule amounts + delivery fee
+    $baseAmount = $paymentSchedules->sum('amount');
     $totalAmount = $baseAmount + $deliveryFee;
 
-    $items = [
-        [
-            'unit_cost' => $totalAmount,
-            'item' => $getPaymentSchedule->payment_head->payment_head_name . ' + Delivery',
-            'revenue_head_code' => $getPaymentSchedule->revenue_head->revenue_head_code,
-        ]
-    ];
+    // Create items array for all payment schedules
+    $items = [];
+    foreach ($paymentSchedules as $schedule) {
+        $items[] = [
+            'unit_cost' => $schedule->amount,
+            'item' => $schedule->payment_head->payment_head_name,
+            'revenue_head_code' => $schedule->revenue_head->revenue_head_code,
+        ];
+    }
+    
+    // Add delivery fee as a separate item
+    if ($deliveryFee > 0) {
+        $items[] = [
+            'unit_cost' => $deliveryFee,
+            'item' => 'Delivery Fee',
+            'revenue_head_code' => 'REV67505e736a592', // Use the valid MOTOKA PAYMENT revenue head code
+        ];
+    }
 
     // Split user name for Monicredit customer
     $nameParts = explode(' ', trim($user->name));
@@ -163,15 +191,30 @@ class PaymentController extends Controller
     $save = Payment::create([
         'transaction_id' => $transaction_id,
         'amount' => $totalAmount,
-        'payment_schedule_id' => $request->payment_schedule_id,
+        'payment_schedule_id' => is_array($request->payment_schedule_id) 
+            ? json_encode($request->payment_schedule_id) 
+            : $request->payment_schedule_id,
         'car_id' => $car->id,
         'status' => 'pending',
         'payment_gateway' => 'monicredit',
         'reference_code' => $data['id'] ?? null,
-        'payment_description' => $items[0]['item'],
+        'payment_description' => count($paymentSchedules) > 1 
+            ? 'Bulk Payment - ' . count($paymentSchedules) . ' items' 
+            : $items[0]['item'],
         'user_id' => $user->id,
         'raw_response' => $data,
-        'meta_data' => json_encode($metaData),
+        'meta_data' => json_encode(array_merge($metaData, [
+            'payment_schedule_ids' => $paymentScheduleIds,
+            'payment_schedules' => $paymentSchedules->map(function($schedule) {
+                return [
+                    'id' => $schedule->id,
+                    'amount' => $schedule->amount,
+                    'payment_head_name' => $schedule->payment_head->payment_head_name,
+                    'revenue_head_code' => $schedule->revenue_head->revenue_head_code,
+                ];
+            })->toArray(),
+            'is_bulk_payment' => count($paymentScheduleIds) > 1,
+        ])),
     ]);
     // Parse meta_data from payment record for top-level response
     $parsedMetaData = json_decode($save->meta_data, true);
