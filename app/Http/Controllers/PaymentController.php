@@ -333,44 +333,20 @@ public function verifyPayment($transaction_id)
             $userIdString = $userModel ? $userModel->userId : null;
 
             if ($userIdString) {
-                $reminderDate = \Carbon\Carbon::parse($car->expiry_date)->startOfDay();
-                $nowDay = \Carbon\Carbon::now()->startOfDay();
-                $daysLeft = $nowDay->diffInDays($reminderDate, false);
-
-                if ($daysLeft > 30) {
-                    \App\Models\Reminder::where('user_id', $userIdString)
-                        ->where('type', 'car')
-                        ->where('ref_id', $car->id)
-                        ->delete();
-                } else if ($daysLeft < 0) {
-                    $message = 'License Expired.';
-                    \App\Models\Reminder::updateOrCreate(
-                        [
-                            'user_id' => $userIdString,
-                            'type' => 'car',
-                            'ref_id' => $car->id,
-                        ],
-                        [
-                            'message' => $message,
-                            'remind_at' => $nowDay->format('Y-m-d H:i:s'),
-                            'is_sent' => false
-                        ]
-                    );
-                } else if ($daysLeft === 0) {
-                    $message = 'Your car registration expires today! Please renew now.';
-                    \App\Models\Reminder::updateOrCreate(
-                        [
-                            'user_id' => $userIdString,
-                            'type' => 'car',
-                            'ref_id' => $car->id,
-                        ],
-                        [
-                            'message' => $message,
-                            'remind_at' => $nowDay->format('Y-m-d H:i:s'),
-                            'is_sent' => false
-                        ]
-                    );
-                }
+                // When payment is made, change status to "Processing"
+                $message = 'Processing';
+                \App\Models\Reminder::updateOrCreate(
+                    [
+                        'user_id' => $userIdString,
+                        'type' => 'car',
+                        'ref_id' => $car->id,
+                    ],
+                    [
+                        'message' => $message,
+                        'remind_at' => \Carbon\Carbon::now()->format('Y-m-d H:i:s'),
+                        'is_sent' => false
+                    ]
+                );
             }
         }
 
@@ -736,6 +712,82 @@ private function createOrderFromPayment($payment, $car, $user)
             'error' => $e->getMessage()
         ]);
     }
+}
+
+/**
+ * Check for existing payments for the same document type
+ */
+public function checkExistingPayments(Request $request)
+{
+    $request->validate([
+        'car_slug' => 'required|string',
+        'payment_schedule_ids' => 'required|array',
+        'payment_schedule_ids.*' => 'integer|exists:payment_schedules,id'
+    ]);
+
+    $user = Auth::user();
+    
+    $car = \App\Models\Car::where('slug', $request->car_slug)
+        ->where('user_id', $user->userId) // Use userId field instead of id
+        ->first();
+
+    if (!$car) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Car not found'
+        ], 404);
+    }
+
+    // Get payment schedule details
+    $paymentSchedules = \App\Models\PaymentSchedule::whereIn('id', $request->payment_schedule_ids)
+        ->with('payment_head')
+        ->get();
+
+    $existingPayments = [];
+    $availableSchedules = [];
+
+    foreach ($paymentSchedules as $schedule) {
+        // Check if there's already a completed payment for this document type
+        // Use a different approach since whereJsonContains might not work as expected
+        $completedPayments = \App\Models\Payment::where('user_id', $user->id) // Payment table uses user ID
+            ->where('car_id', $car->id)
+            ->where('status', 'completed')
+            ->get();
+        
+        $existingPayment = null;
+        foreach ($completedPayments as $payment) {
+            $scheduleIds = is_string($payment->payment_schedule_id) 
+                ? json_decode($payment->payment_schedule_id, true) 
+                : $payment->payment_schedule_id;
+            
+            if (is_array($scheduleIds) && in_array($schedule->id, $scheduleIds)) {
+                $existingPayment = $payment;
+                break;
+            }
+        }
+
+        if ($existingPayment) {
+            $existingPayments[] = [
+                'payment_head_name' => $schedule->payment_head->payment_head_name,
+                'payment_id' => $existingPayment->id,
+                'amount' => $existingPayment->amount,
+                'created_at' => $existingPayment->created_at,
+                'status' => $existingPayment->status
+            ];
+        } else {
+            $availableSchedules[] = $schedule;
+        }
+    }
+
+    return response()->json([
+        'status' => true,
+        'data' => [
+            'existing_payments' => $existingPayments,
+            'available_schedules' => $availableSchedules,
+            'has_duplicates' => count($existingPayments) > 0,
+            'can_proceed' => count($availableSchedules) > 0
+        ]
+    ]);
 }
 
 /**

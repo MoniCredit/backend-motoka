@@ -335,4 +335,51 @@ class OrderDocumentController extends Controller
             'Content-Disposition' => 'inline; filename="' . $document->original_filename . '"'
         ]);
     }
+
+    /**
+     * Mark order as completed and update reminder status
+     */
+    public function markOrderCompleted(Request $request, $orderSlug)
+    {
+        $request->validate([
+            'admin_notes' => 'nullable|string|max:1000'
+        ]);
+
+        $order = Order::where('slug', $orderSlug)->first();
+        if (!$order) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Order not found'
+            ], 404);
+        }
+
+        // Update order status
+        $order->update([
+            'status' => 'completed',
+            'completed_at' => now(),
+            'processed_by' => auth()->id(),
+            'notes' => $request->admin_notes ? 
+                ($order->notes ? $order->notes . "\n\nAdmin Notes: " . $request->admin_notes : "Admin Notes: " . $request->admin_notes) : 
+                $order->notes
+        ]);
+
+        // Update reminder status to "Paid" or remove it
+        $user = $order->user;
+        if ($user && $user->userId) {
+            \App\Models\Reminder::where('user_id', $user->userId)
+                ->where('type', 'car')
+                ->where('ref_id', $order->car_id)
+                ->update([
+                    'message' => 'Paid',
+                    'remind_at' => now()->format('Y-m-d H:i:s'),
+                    'is_sent' => false
+                ]);
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Order marked as completed successfully',
+            'data' => $order->fresh()
+        ]);
+    }
 }

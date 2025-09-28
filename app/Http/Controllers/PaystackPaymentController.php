@@ -375,50 +375,8 @@ class PaystackPaymentController extends Controller
                         $this->createOrderFromPayment($payment, $car, $user);
                     }
 
-                    // Handle reminders (same logic as Monicredit)
-                    $userModel = \App\Models\User::find($payment->user_id);
-                    $userIdString = $userModel ? $userModel->userId : null;
-
-                    if ($userIdString) {
-                        $reminderDate = \Carbon\Carbon::parse($car->expiry_date)->startOfDay();
-                        $nowDay = \Carbon\Carbon::now()->startOfDay();
-                        $daysLeft = $nowDay->diffInDays($reminderDate, false);
-
-                        if ($daysLeft > 30) {
-                            \App\Models\Reminder::where('user_id', $userIdString)
-                                ->where('type', 'car')
-                                ->where('ref_id', $car->id)
-                                ->delete();
-                        } else if ($daysLeft < 0) {
-                            $message = 'License Expired.';
-                            \App\Models\Reminder::updateOrCreate(
-                                [
-                                    'user_id' => $userIdString,
-                                    'type' => 'car',
-                                    'ref_id' => $car->id,
-                                ],
-                                [
-                                    'message' => $message,
-                                    'remind_at' => $nowDay->format('Y-m-d H:i:s'),
-                                    'is_sent' => false
-                                ]
-                            );
-                        } else if ($daysLeft === 0) {
-                            $message = 'License expires today.';
-                            \App\Models\Reminder::updateOrCreate(
-                                [
-                                    'user_id' => $userIdString,
-                                    'type' => 'car',
-                                    'ref_id' => $car->id,
-                                ],
-                                [
-                                    'message' => $message,
-                                    'remind_at' => $nowDay->format('Y-m-d H:i:s'),
-                                    'is_sent' => false
-                                ]
-                            );
-                        }
-                    }
+                    // Handle reminders - update to "Processing" status
+                    $this->updateCarReminders($payment, $car);
                 }
 
                 return response()->json([
@@ -718,45 +676,41 @@ class PaystackPaymentController extends Controller
         $userModel = \App\Models\User::find($payment->user_id);
         $userIdString = $userModel ? $userModel->userId : null;
 
-        if ($userIdString) {
-            $reminderDate = \Carbon\Carbon::parse($car->expiry_date)->startOfDay();
-            $nowDay = \Carbon\Carbon::now()->startOfDay();
-            $daysLeft = $nowDay->diffInDays($reminderDate, false);
+        \Log::info('Updating car reminders', [
+            'payment_id' => $payment->id,
+            'car_id' => $car->id,
+            'user_id' => $payment->user_id,
+            'userIdString' => $userIdString
+        ]);
 
-            if ($daysLeft > 30) {
-                \App\Models\Reminder::where('user_id', $userIdString)
-                    ->where('type', 'car')
-                    ->where('ref_id', $car->id)
-                    ->delete();
-            } else if ($daysLeft < 0) {
-                $message = 'License Expired.';
-                \App\Models\Reminder::updateOrCreate(
-                    [
-                        'user_id' => $userIdString,
-                        'type' => 'car',
-                        'ref_id' => $car->id,
-                    ],
-                    [
-                        'message' => $message,
-                        'remind_at' => $nowDay->format('Y-m-d H:i:s'),
-                        'is_sent' => false
-                    ]
-                );
-            } else if ($daysLeft === 0) {
-                $message = 'License expires today.';
-                \App\Models\Reminder::updateOrCreate(
-                    [
-                        'user_id' => $userIdString,
-                        'type' => 'car',
-                        'ref_id' => $car->id,
-                    ],
-                    [
-                        'message' => $message,
-                        'remind_at' => $nowDay->format('Y-m-d H:i:s'),
-                        'is_sent' => false
-                    ]
-                );
-            }
+        if ($userIdString) {
+            // When payment is made, change status to "Processing"
+            $message = 'Processing';
+            $reminder = \App\Models\Reminder::updateOrCreate(
+                [
+                    'user_id' => $userIdString,
+                    'type' => 'car',
+                    'ref_id' => $car->id,
+                ],
+                [
+                    'message' => $message,
+                    'remind_at' => \Carbon\Carbon::now()->format('Y-m-d H:i:s'),
+                    'is_sent' => false
+                ]
+            );
+            
+            \Log::info('Reminder updated successfully', [
+                'reminder_id' => $reminder->id,
+                'message' => $message,
+                'user_id' => $userIdString,
+                'car_id' => $car->id
+            ]);
+        } else {
+            \Log::error('Could not update reminder - userIdString not found', [
+                'payment_id' => $payment->id,
+                'user_id' => $payment->user_id,
+                'userModel' => $userModel
+            ]);
         }
     }
 
