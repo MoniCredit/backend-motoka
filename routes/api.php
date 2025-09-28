@@ -106,6 +106,7 @@ Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOTP']);
             Route::post('/paystack/verify/{reference}', [PaystackPaymentController::class, 'verifyPayment']);
             
             // Common payment routes
+            Route::post('/check-existing', [PaymentController::class, 'checkExistingPayments']);
             Route::get('/car-receipt/{car_slug}', [PaymentController::class, 'getCarPaymentReceipt']);
             Route::get('/receipt/{payment_slug}', [PaymentController::class, 'getPaymentReceipt']);
             Route::get('/wallet', [PaymentController::class, 'getWalletInfo']);
@@ -326,6 +327,7 @@ Route::middleware(['cors', 'auth:sanctum', 'admin'])->prefix('admin')->group(fun
     Route::get('/document-types', [OrderDocumentController::class, 'getDocumentTypes']);
     Route::post('/orders/{orderSlug}/documents', [OrderDocumentController::class, 'uploadDocuments']);
     Route::post('/orders/{orderSlug}/send-documents', [OrderDocumentController::class, 'sendDocumentsToUser']);
+    Route::post('/orders/{orderSlug}/complete', [OrderDocumentController::class, 'markOrderCompleted']);
     Route::get('/orders/{orderSlug}/documents', [OrderDocumentController::class, 'getOrderDocuments']);
     Route::get('/orders/{orderSlug}/documents/{documentId}', [OrderDocumentController::class, 'viewDocument']);
     
