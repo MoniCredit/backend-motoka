@@ -50,6 +50,19 @@ class TwoFactorController extends Controller
     public function enableEmail2fa(Request $request)
     {
         $user = Auth::user();
+        
+        // Rate limiting: 10 attempts per user per 15 minutes
+        $key = '2fa_enable_email_' . $user->id;
+        
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 10)) {
+            $seconds = \Illuminate\Support\Facades\RateLimiter::availableIn($key);
+            return response()->json([
+                'success' => false,
+                'message' => 'Too many 2FA enable attempts. Please wait ' . $seconds . ' seconds before trying again.',
+                'retry_after' => $seconds
+            ], 429);
+        }
+        
         $code = rand(100000, 999999);
         $user->two_factor_email_code = $code;
         $user->two_factor_email_expires_at = now()->addMinutes(10);
@@ -61,6 +74,9 @@ class TwoFactorController extends Controller
             $message->to($user->email)->subject('Your 2FA Code');
         });
 
+        // Increment rate limiter
+        \Illuminate\Support\Facades\RateLimiter::hit($key, 900); // 15 minutes
+
         return response()->json(['success' => true, 'message' => '2FA code sent to your email']);
     }
 
@@ -68,6 +84,18 @@ class TwoFactorController extends Controller
     {
         $request->validate(['code' => 'required|string']);
         $user = Auth::user();
+        
+        // Rate limiting: 10 attempts per user per 15 minutes
+        $key = '2fa_verify_email_' . $user->id;
+        
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 10)) {
+            $seconds = \Illuminate\Support\Facades\RateLimiter::availableIn($key);
+            return response()->json([
+                'success' => false,
+                'message' => 'Too many 2FA verification attempts. Please wait ' . $seconds . ' seconds before trying again.',
+                'retry_after' => $seconds
+            ], 429);
+        }
 
         if (
             $user->two_factor_email_code === $request->code &&
@@ -76,8 +104,16 @@ class TwoFactorController extends Controller
         ) {
             $user->two_factor_enabled = true;
             $user->save();
+            
+            // Clear rate limiter on successful verification
+            \Illuminate\Support\Facades\RateLimiter::clear($key);
+            
             return response()->json(['success' => true, 'message' => '2FA enabled']);
         }
+        
+        // Increment rate limiter on failed verification
+        \Illuminate\Support\Facades\RateLimiter::hit($key, 900); // 15 minutes
+        
         return response()->json(['success' => false, 'message' => 'Invalid or expired code'], 422);
     }
 

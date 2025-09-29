@@ -391,7 +391,8 @@ class AuthController extends Controller
         ]);
 
         if ($user->save()) {
-            $token = $user->createToken("API TOKEN")->plainTextToken;
+            // SECURITY FIX: Do NOT create token until email is verified
+            // This prevents bypassing email verification by manipulating the registration response
 
             // Try Monicredit wallet creation, but don't block registration/OTP if it fails
             try {
@@ -446,12 +447,75 @@ class AuthController extends Controller
                 'status' => 'success',
                 'message' => $message,
                 'user' => $user,
-                'authorization' => [
-                    'token' => $token,
-                    'type' => 'bearer',
-                ]
+                'requires_verification' => true,
+                'email' => $user->email
+                // SECURITY FIX: No token provided until email verification is complete
             ]);
         }
+    }
+
+    /**
+     * Create token after email verification
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function createTokenAfterVerification(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|string|email|exists:users,email',
+        ], [
+            'email.required' => 'Email is required.',
+            'email.string' => 'Email must be a string.',
+            'email.email' => 'Please provide a valid email address.',
+            'email.exists' => 'No account found with this email address.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $validator->errors()->first()
+            ], 422);
+        }
+
+        $email = trim($request->email);
+        $user = User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        // Check if email is verified
+        if (is_null($user->email_verified_at)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Email verification required. Please verify your email first.',
+                'requires_verification' => true,
+                'email' => $user->email
+            ], 403);
+        }
+
+        // Create token only after email verification
+        $token = $user->createToken('API TOKEN')->plainTextToken;
+
+        Log::info('Token created after email verification', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'ip' => $request->ip()
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Token created successfully',
+            'user' => $user,
+            'authorization' => [
+                'token' => $token,
+                'type' => 'bearer',
+            ]
+        ]);
     }
 
     /**
@@ -463,6 +527,21 @@ class AuthController extends Controller
 
     public function login2(Request $request)
     {
+        // Rate limiting: 10 attempts per email per 15 minutes
+        $email = $request->email;
+        if ($email) {
+            $key = 'login_attempts_' . $email;
+            
+            if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 10)) {
+                $seconds = \Illuminate\Support\Facades\RateLimiter::availableIn($key);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Too many login attempts. Please wait ' . $seconds . ' seconds before trying again.',
+                    'retry_after' => $seconds
+                ], 429);
+            }
+        }
+
         $validator = Validator::make($request->all(), [
             'email' => 'nullable|string|email|max:255|exists:users,email',
             'phone_number' => 'nullable|string|exists:users,phone_number',
@@ -486,6 +565,10 @@ class AuthController extends Controller
         $user = $userQuery->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
+            // Increment rate limiter on failed login
+            if ($email) {
+                \Illuminate\Support\Facades\RateLimiter::hit('login_attempts_' . $email, 900); // 15 minutes
+            }
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
         // **Check if email is verified**
@@ -518,6 +601,11 @@ class AuthController extends Controller
         }
 
         $token = $user->createToken('API TOKEN')->plainTextToken;
+
+        // Clear rate limiter on successful login
+        if ($email) {
+            \Illuminate\Support\Facades\RateLimiter::clear('login_attempts_' . $email);
+        }
 
         return response()->json([
             'status' => 'success',
