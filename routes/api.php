@@ -33,14 +33,15 @@ Route::controller(AuthController::class)->group(function () {
     Route::post('send-otp', 'sendOtp');
     Route::post('verify-otp', 'verifyOtp');
     Route::post('reset-password', 'reset');
+    Route::post('create-token-after-verification', 'createTokenAfterVerification');
 });
 
 // OTP-based login routes (outside controller group)
 Route::post('/send-login-otp', [AuthController::class, 'sendLoginOTP']);
 Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOTP']);
 
-    // Protected authentication routes
-    Route::middleware('auth:sanctum')->group(function () {
+    // Protected authentication routes - require email verification
+    Route::middleware(['auth:sanctum', 'email.verified'])->group(function () {
         Route::post('logout', [AuthController::class, 'logout'])->name('logout');
         Route::post('refresh', [AuthController::class, 'refresh'])->name('refresh');
 

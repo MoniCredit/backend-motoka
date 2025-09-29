@@ -25,6 +25,19 @@ class VerificationController extends Controller
 
     public function sendVerification(Request $request)
     {
+        // Rate limiting: 10 attempts per email/phone per 15 minutes
+        $identifier = $request->email ? 'email:' . $request->email : 'phone:' . $request->phone_number;
+        $key = 'verification_send_' . $identifier;
+        
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 10)) {
+            $seconds = \Illuminate\Support\Facades\RateLimiter::availableIn($key);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Too many verification attempts. Please wait ' . $seconds . ' seconds before trying again.',
+                'retry_after' => $seconds
+            ], 429);
+        }
+
         $request->validate([
             'email' => 'nullable|string|email|exists:users,email',
             'phone_number' => 'nullable|string|exists:users,phone_number',
@@ -72,6 +85,9 @@ class VerificationController extends Controller
             }
         }
 
+        // Increment rate limiter on successful send
+        \Illuminate\Support\Facades\RateLimiter::hit($key, 900); // 15 minutes
+
         return response()->json([
             'status' => 'success',
             'message' => 'Verification code sent successfully'
@@ -80,6 +96,19 @@ class VerificationController extends Controller
 
     public function resendEmailVerification(Request $request)
     {
+        // Rate limiting: 10 attempts per email/phone per 15 minutes
+        $identifier = $request->email ? 'email:' . $request->email : 'phone:' . $request->phone_number;
+        $key = 'verification_resend_' . $identifier;
+        
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 10)) {
+            $seconds = \Illuminate\Support\Facades\RateLimiter::availableIn($key);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Too many resend attempts. Please wait ' . $seconds . ' seconds before trying again.',
+                'retry_after' => $seconds
+            ], 429);
+        }
+
         $request->validate([
             'email' => 'nullable|string|email|exists:users,email',
             'phone_number' => 'nullable|string|exists:users,phone_number'
@@ -127,6 +156,9 @@ class VerificationController extends Controller
             }
         }
 
+        // Increment rate limiter on successful resend
+        \Illuminate\Support\Facades\RateLimiter::hit($key, 900); // 15 minutes
+
         return response()->json([
             'status' => 'success',
             'message' => 'Verification code sent successfully'
@@ -149,6 +181,19 @@ class VerificationController extends Controller
 
     public function verifyUser(Request $request)
     {
+        // Rate limiting: 10 attempts per email/phone per 15 minutes
+        $identifier = $request->email ? 'email:' . $request->email : 'phone:' . $request->phone_number;
+        $key = 'verification_verify_' . $identifier;
+        
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 10)) {
+            $seconds = \Illuminate\Support\Facades\RateLimiter::availableIn($key);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Too many verification attempts. Please wait ' . $seconds . ' seconds before trying again.',
+                'retry_after' => $seconds
+            ], 429);
+        }
+
         $request->validate([
             'email' => 'nullable|string|exists:users,email',
             'phone_number' => 'nullable|string|exists:users,phone_number',
@@ -202,11 +247,17 @@ class VerificationController extends Controller
             $user->$expiresAtColumn = null;
             $user->save();
 
+            // Clear rate limiter on successful verification
+            \Illuminate\Support\Facades\RateLimiter::clear($key);
+
             return response()->json([
                 'status' => 'success',
                 'message' => ucfirst(str_replace('_', ' ', $verifiedColumn)) . ' verified successfully'
             ]);
         }
+
+        // Increment rate limiter on failed verification
+        \Illuminate\Support\Facades\RateLimiter::hit($key, 900); // 15 minutes
 
         return response()->json([
             'status' => 'error',
