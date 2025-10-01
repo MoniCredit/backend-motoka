@@ -14,6 +14,7 @@ use App\Models\Reminder;
 use Carbon\Carbon;
 use App\Models\Notification;
 use App\Models\State;
+use App\Services\NotificationService;
 
 class CarController extends Controller
 {
@@ -188,28 +189,8 @@ class CarController extends Controller
                 $this->deleteReminder($userId, 'car', $car->id);
             }
 
-           
-            Notification::create([
-                'user_id' => $userId,
-                'type' => 'car',
-                'action' => 'created',
-                'message' => 'Your car has been registered successfully.',
-            ]);
-
-           
-            $notifications = Notification::where('user_id', $userId)
-                ->orderBy('created_at', 'desc')
-                ->get();
-
-          
-            $groupedNotifications = [];
-            foreach ($notifications as $notification) {
-                $date = $notification->created_at->format('Y-m-d');
-                if (!isset($groupedNotifications[$date])) {
-                    $groupedNotifications[$date] = [];
-                }
-                $groupedNotifications[$date][] = $notification;
-            }
+            // Create notification for car registration
+            NotificationService::notifyCarOperation($userId, 'created', $car);
 
             return response()->json([
                 'status' => 'success',
@@ -389,12 +370,8 @@ class CarController extends Controller
             $this->deleteReminder($userId, 'car', $car->id);
         }
 
-        Notification::create([
-            'user_id' => $userId,
-            'type' => 'car',
-            'action' => 'updated',
-            'message' => 'Your car details have been updated successfully.',
-        ]);
+        // Create notification for car update
+        NotificationService::notifyCarOperation($userId, 'updated', $car);
 
         return response()->json([
             'status' => 'success',
@@ -431,18 +408,17 @@ class CarController extends Controller
                 Storage::disk('public')->delete($path);
             }
         }
+        // Store car info before deletion for notification
+        $carInfo = $car->toArray();
+        
         $car->delete();
         // Delete associated reminders
         Reminder::where('user_id', $userId)
             ->where('ref_id', $car->id) // Use car->id for the ref_id
             ->delete();
-        // Optional: record a notification
-        Notification::create([
-            'user_id' => $userId,
-            'type' => 'car',
-            'action' => 'deleted',
-            'message' => 'Your car has been deleted successfully.',
-        ]);
+        
+        // Create notification for car deletion
+        NotificationService::notifyCarOperation($userId, 'deleted', (object)$carInfo);
         return response()->json([
             'status' => 'success',
             'message' => 'Car and associated reminders deleted successfully.'

@@ -41,6 +41,21 @@ class Payment extends Model
                 $payment->slug = (string) Str::uuid();
             }
         });
+
+        static::updated(function ($payment) {
+            // Check if payment status changed to completed
+            if ($payment->isDirty('status') && $payment->status === 'completed') {
+                // Only create notification if it wasn't already completed
+                if ($payment->getOriginal('status') !== 'completed') {
+                    \Log::info('Payment model event triggered', [
+                        'payment_id' => $payment->id,
+                        'old_status' => $payment->getOriginal('status'),
+                        'new_status' => $payment->status
+                    ]);
+                    \App\Services\PaymentService::handlePaymentCompletion($payment);
+                }
+            }
+        });
     }
 
     public function user()

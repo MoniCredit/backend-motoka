@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Car;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -126,6 +127,9 @@ class PlateController extends Controller
 
                 $car->update($updateData);
 
+                // Create notification for plate number update
+                NotificationService::notifyPlateNumberOperation($userId, 'updated', $car);
+
                 return response()->json([
                     'status' => 'success', 
                     'message' => 'Plate information updated successfully',
@@ -167,6 +171,9 @@ class PlateController extends Controller
                 $this->handleFileUploads($request, $carData);
 
                 $car = Car::create($carData);
+
+                // Create notification for plate number creation
+                NotificationService::notifyPlateNumberOperation($userId, 'created', $car);
 
                 return response()->json([
                     'status' => 'success',

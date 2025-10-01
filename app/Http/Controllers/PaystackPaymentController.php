@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Payment;
 use App\Models\PaymentSchedule;
+use App\Services\NotificationService;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -377,6 +378,9 @@ class PaystackPaymentController extends Controller
 
                     // Handle reminders - update to "Processing" status
                     $this->updateCarReminders($payment, $car);
+
+                    // Create appropriate notification based on payment type
+                    $this->createPaymentNotification($user->id, $payment, $car);
                 }
 
                 return response()->json([
@@ -389,7 +393,9 @@ class PaystackPaymentController extends Controller
                 ]);
             }
 
-            // Payment not successful
+            // Payment not successful - create notification
+            NotificationService::notifyPaymentOperation($user->id, 'failed', $payment);
+            
             return response()->json([
                 'status' => false,
                 'message' => 'Payment not successful',
@@ -583,6 +589,9 @@ class PaystackPaymentController extends Controller
             'gateway_response' => $data,
             'raw_response' => $data
         ]);
+
+        // Create notification for payment completion
+        \App\Services\PaymentService::handlePaymentCompletion($payment);
 
         // Update car status
         $car = \App\Models\Car::find($payment->car_id);
@@ -891,6 +900,57 @@ class PaystackPaymentController extends Controller
                 } else {
                     return 'general_service';
                 }
+        }
+    }
+
+    /**
+     * Create appropriate notification based on payment type
+     */
+    private function createPaymentNotification($userId, $payment, $car)
+    {
+        $isRenewal = false;
+        $paymentHeadName = '';
+        
+        // Get payment schedule to determine the type of payment
+        try {
+            // Load the payment schedule with its payment head
+            $paymentSchedule = PaymentSchedule::with('payment_head')->find($payment->payment_schedule_id);
+            
+            if ($paymentSchedule && $paymentSchedule->payment_head) {
+                $paymentHeadName = strtolower($paymentSchedule->payment_head->payment_head_name);
+                
+                // Check if this is a car renewal payment
+                if (strpos($paymentHeadName, 'license') !== false || 
+                    strpos($paymentHeadName, 'renewal') !== false ||
+                    strpos($paymentHeadName, 'vehicle license') !== false) {
+                    $isRenewal = true;
+                }
+            }
+            
+            // Also check payment description for renewal keywords
+            if (!$isRenewal && $payment->payment_description) {
+                $description = strtolower($payment->payment_description);
+                if (strpos($description, 'license') !== false || 
+                    strpos($description, 'renewal') !== false ||
+                    strpos($description, 'vehicle license') !== false) {
+                    $isRenewal = true;
+                }
+            }
+            
+        } catch (\Exception $e) {
+            // Log error but continue with generic notification
+            \Log::error('Error determining payment type for notification', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        if ($isRenewal) {
+            // Create car renewal notification
+            NotificationService::notifyCarOperation($userId, 'renewed', $car, "Payment of ₦" . number_format($payment->amount, 2) . " completed successfully.");
+        } else {
+            // Create generic payment notification
+            NotificationService::notifyPaymentOperation($userId, 'completed', $payment);
         }
     }
 

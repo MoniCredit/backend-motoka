@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Reminder;
 use App\Models\Car;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -173,6 +174,51 @@ class ReminderController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Reminder deleted successfully'
+        ]);
+    }
+
+    /**
+     * Process reminders and create notifications
+     */
+    public function processReminders()
+    {
+        $userId = Auth::user()->userId;
+        
+        // Get all active reminders for the user
+        $reminders = Reminder::with('car')
+            ->where('user_id', $userId)
+            ->where('is_sent', false)
+            ->where('remind_at', '<=', now())
+            ->get();
+
+        $notificationsCreated = 0;
+
+        foreach ($reminders as $reminder) {
+            $car = Car::find($reminder->ref_id);
+            
+            if ($car) {
+                // Calculate days left
+                $daysLeft = \Carbon\Carbon::now()->diffInDays(\Carbon\Carbon::parse($car->expiry_date), false);
+                
+                // Create notification for reminder
+                NotificationService::notifyReminder(
+                    $userId, 
+                    'car', 
+                    $car, 
+                    'car_expiry', 
+                    $daysLeft
+                );
+                
+                // Mark reminder as sent
+                $reminder->update(['is_sent' => true]);
+                $notificationsCreated++;
+            }
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Processed {$notificationsCreated} reminders and created notifications",
+            'notifications_created' => $notificationsCreated
         ]);
     }
 }
