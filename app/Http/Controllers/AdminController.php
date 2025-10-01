@@ -1011,6 +1011,140 @@ class AdminController extends Controller
     }
 
     /**
+     * Get all transactions for admin payment page (showing all payment records)
+     */
+    public function getAllTransactions(Request $request)
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $status = $request->get('status', 'all');
+        $search = $request->get('search', '');
+
+        // Map frontend status to database status (Payment model statuses)
+        $statusMap = [
+            'all' => null,
+            'success' => 'approved',
+            'pending' => 'pending',
+            'failed' => 'declined'
+        ];
+
+        $query = Payment::with(['user', 'car'])
+            ->orderBy('created_at', 'desc');
+
+        if ($status !== 'all' && isset($statusMap[$status])) {
+            $query->where('status', $statusMap[$status]);
+        }
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('transaction_id', 'like', "%{$search}%")
+                  ->orWhere('payment_description', 'like', "%{$search}%")
+                  ->orWhereHas('user', function($userQuery) use ($search) {
+                      $userQuery->where('name', 'like', "%{$search}%")
+                               ->orWhere('email', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $transactions = $query->paginate($perPage);
+
+        // Calculate summary statistics based on payments
+        $summary = [
+            'total_amount' => Payment::where('status', 'approved')->sum('amount'),
+            'total_transactions' => Payment::count(),
+            'successful_transactions' => Payment::where('status', 'approved')->count(),
+            'failed_transactions' => Payment::where('status', 'declined')->count(),
+            'pending_transactions' => Payment::where('status', 'pending')->count(),
+        ];
+
+        return response()->json([
+            'status' => true,
+            'data' => $transactions,
+            'summary' => $summary
+        ]);
+    }
+
+    /**
+     * Get failed transactions for admin payment page (showing declined payments)
+     */
+    public function getFailedTransactions(Request $request)
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $perPage = $request->get('per_page', 10);
+        $search = $request->get('search', '');
+
+        $query = Payment::with(['user', 'car'])
+            ->where('status', 'declined')
+            ->orderBy('created_at', 'desc');
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('transaction_id', 'like', "%{$search}%")
+                  ->orWhere('payment_description', 'like', "%{$search}%")
+                  ->orWhereHas('user', function($userQuery) use ($search) {
+                      $userQuery->where('name', 'like', "%{$search}%")
+                               ->orWhere('email', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $transactions = $query->paginate($perPage);
+
+        return response()->json([
+            'status' => true,
+            'data' => $transactions
+        ]);
+    }
+
+    /**
+     * Debug transactions - check what data exists
+     */
+    public function debugTransactions()
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $transactionCount = \App\Models\Transaction::count();
+        $paymentCount = Payment::count();
+        
+        $recentTransactions = \App\Models\Transaction::latest()->limit(3)->get();
+        $recentPayments = Payment::latest()->limit(3)->get();
+
+        return response()->json([
+            'status' => true,
+            'data' => [
+                'transaction_count' => $transactionCount,
+                'payment_count' => $paymentCount,
+                'recent_transactions' => $recentTransactions,
+                'recent_payments' => $recentPayments,
+                'payment_statuses' => Payment::select('status')->distinct()->pluck('status'),
+            ]
+        ]);
+    }
+
+    /**
      * Update agent payment when order is completed
      */
     private function updateAgentPayment(Order $order)

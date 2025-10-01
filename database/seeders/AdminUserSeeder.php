@@ -30,6 +30,24 @@ class AdminUserSeeder extends Seeder
 
         // Then create/update admin users
         foreach ($adminEmails as $email) {
+            $existingUser = User::where('email', $email)->first();
+            
+            $userData = [
+                'name' => $this->generateAdminName($email),
+                'email' => $email,
+                'email_verified_at' => now(),
+                'password' => Hash::make('admin123'), // Default password for admin
+                'phone_number' => null,
+                'user_type' => 'admin',
+                'is_admin' => true,
+                'remember_token' => Str::random(10),
+            ];
+            
+            // Only generate new userId if user doesn't exist
+            if (!$existingUser) {
+                $userData['userId'] = Str::random(6);
+            }
+            
             User::updateOrCreate(
                 ['email' => $email],
                 [

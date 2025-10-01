@@ -11,12 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('lgas', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->foreignId('state_id')->constrained('states')->onDelete('cascade');
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('lgas')) {
+            Schema::create('lgas', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->foreignId('state_id')->constrained('states')->onDelete('cascade');
+                $table->timestamps();
+            });
+        }
     }
 
     /**

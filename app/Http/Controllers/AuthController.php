@@ -335,7 +335,7 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z\s\'-]+$/'], // Allows letters, spaces, hyphens, and apostrophes
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', 'regex:/^[^<>]*$/'], // Disallow < and > for XSS
             'phone_number' => ['nullable', 'string', 'unique:users,phone_number', 'regex:/^[0-9\-\(\)\s\+]+$/'], // Allows digits, hyphens, parentheses, spaces, plus sign
-            'password' => ['required', 'string', 'min:8', 'confirmed', 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
             'nin' => ['nullable', 'string', 'regex:/^[a-zA-Z0-9]+$/'], // Only alphanumeric for NIN, adjust regex if a specific format is known
         ],
         [
@@ -359,7 +359,7 @@ class AuthController extends Controller
             'password.string' => 'The password must be a string.',
             'password.min' => 'The password must be at least 8 characters.',
             'password.confirmed' => 'The password confirmation does not match.',
-            'password.regex' => 'The password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character (e.g., @$!%*?&).',
+            // 'password.regex' => 'The password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character (e.g., !@#$%^&*()_+-=[]{}|;:,.<>?/~`).',
             
             'nin.string' => 'The NIN must be a string.',
             'nin.regex' => 'The NIN can only contain alphanumeric characters.',

@@ -335,5 +335,10 @@ Route::middleware(['cors', 'auth:sanctum', 'admin'])->prefix('admin')->group(fun
     // Agent Payments
     Route::get('/agent-payments', [AdminController::class, 'getAllAgentPayments']);
     Route::get('/agents/{agentId}/payments', [AdminController::class, 'getAgentPayments']);
+    
+    // Transactions
+    Route::get('/transactions', [AdminController::class, 'getAllTransactions']);
+    Route::get('/transactions/failed', [AdminController::class, 'getFailedTransactions']);
+    Route::get('/transactions/debug', [AdminController::class, 'debugTransactions']);
 });
 
