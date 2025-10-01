@@ -15,5 +15,11 @@ class Notification extends Model
         'action',
         'message',
         'is_read',
+        'data',
+    ];
+
+    protected $casts = [
+        'data' => 'array',
+        'is_read' => 'boolean',
     ];
 }

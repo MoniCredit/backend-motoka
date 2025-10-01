@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\DriverLicense;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
@@ -111,6 +112,10 @@ class DriverLicenseController extends Controller
             }
         }
         $license = \App\Models\DriverLicense::create($data);
+        
+        // Create notification for driver license creation
+        NotificationService::notifyDriverLicenseOperation($userId, 'created', $license);
+        
         return response()->json([
             'status' => 'success',
             'license' => $this->filterLicenseResponse($license)
@@ -530,6 +535,9 @@ class DriverLicenseController extends Controller
         $license->fill($request->except(['date_of_birth']));
         $license->save();
 
+        // Create notification for driver license update
+        NotificationService::notifyDriverLicenseOperation($userId, 'updated', $license);
+
         return response()->json(['status' => 'success', 'license' => $license]);
     }
 
@@ -544,7 +552,15 @@ class DriverLicenseController extends Controller
         if (!in_array($license->status, ['unpaid', 'rejected'])) {
             return response()->json(['status' => 'error', 'message' => 'Only unpaid or rejected licenses can be deleted'], 403);
         }
+        
+        // Store license info before deletion for notification
+        $licenseInfo = $license->toArray();
+        
         $license->delete();
+        
+        // Create notification for driver license deletion
+        NotificationService::notifyDriverLicenseOperation($userId, 'deleted', (object)$licenseInfo);
+        
         return response()->json(['status' => 'success', 'message' => 'License deleted successfully']);
     }
 }

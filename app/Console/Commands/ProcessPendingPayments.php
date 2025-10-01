@@ -7,6 +7,7 @@ use App\Models\Payment;
 use App\Models\Car;
 use App\Models\User;
 use App\Http\Controllers\PaystackPaymentController;
+use App\Services\PaymentService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use ReflectionClass;
@@ -94,6 +95,9 @@ class ProcessPendingPayments extends Command
                         $method->setAccessible(true);
                         $method->invoke($controller, $payment, $car, $user);
 
+                        // Create notification for payment completion
+                        PaymentService::handlePaymentCompletion($payment);
+
                         $this->info("✅ Successfully processed payment: {$payment->gateway_reference}");
                         $processed++;
                         
@@ -138,4 +142,5 @@ class ProcessPendingPayments extends Command
 
         return 0;
     }
+
 }

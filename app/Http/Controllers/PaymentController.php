@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Payment;
 use App\Models\PaymentSchedule;
+use App\Services\NotificationService;
 // use Faker\Provider\ar_EG\Payment;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
@@ -216,6 +217,9 @@ class PaymentController extends Controller
             'is_bulk_payment' => count($paymentScheduleIds) > 1,
         ])),
     ]);
+
+    // Create notification for payment initiation
+    NotificationService::notifyPaymentOperation($user->id, 'created', $save);
     // Parse meta_data from payment record for top-level response
     $parsedMetaData = json_decode($save->meta_data, true);
     return response()->json([
@@ -314,52 +318,69 @@ public function verifyPayment($transaction_id)
         'raw_response' => $data
     ]);
 
-    // Check if payment is successful (approved or success)
-    if (isset($data['status']) && $data['status'] == true && 
-        (strtolower($data['data']['status'] ?? '') === 'approved' || 
-         strtolower($data['data']['status'] ?? '') === 'success')) {
+        // Check if payment is successful (approved or success)
+        if (isset($data['status']) && $data['status'] == true && 
+            (strtolower($data['data']['status'] ?? '') === 'approved' || 
+             strtolower($data['data']['status'] ?? '') === 'success')) {
 
-        // If payment is successful and for a car, update car expiry and reminder
-        $car = \App\Models\Car::find($payment->car_id);
-        if ($car) {
-            $car->status = 'active';
-            $car->save();
+            // If payment is successful and for a car, update car expiry and reminder
+            $car = \App\Models\Car::find($payment->car_id);
+            if ($car) {
+                $car->status = 'active';
+                $car->save();
 
-            // Create order for admin processing
-            $this->createOrderFromPayment($payment, $car, $user);
+                // Create order for admin processing
+                $this->createOrderFromPayment($payment, $car, $user);
 
-            // Get the userId string from the user model
-            $userModel = \App\Models\User::find($payment->user_id);
-            $userIdString = $userModel ? $userModel->userId : null;
+                // Get the userId string from the user model
+                $userModel = \App\Models\User::find($payment->user_id);
+                $userIdString = $userModel ? $userModel->userId : null;
 
-            if ($userIdString) {
-                // When payment is made, change status to "Processing"
-                $message = 'Processing';
-                \App\Models\Reminder::updateOrCreate(
-                    [
-                        'user_id' => $userIdString,
-                        'type' => 'car',
-                        'ref_id' => $car->id,
-                    ],
-                    [
-                        'message' => $message,
-                        'remind_at' => \Carbon\Carbon::now()->format('Y-m-d H:i:s'),
-                        'is_sent' => false
-                    ]
-                );
+                if ($userIdString) {
+                    // When payment is made, change status to "Processing"
+                    $message = 'Processing';
+                    \App\Models\Reminder::updateOrCreate(
+                        [
+                            'user_id' => $userIdString,
+                            'type' => 'car',
+                            'ref_id' => $car->id,
+                        ],
+                        [
+                            'message' => $message,
+                            'remind_at' => \Carbon\Carbon::now()->format('Y-m-d H:i:s'),
+                            'is_sent' => false
+                        ]
+                    );
+                }
+
+                // Create appropriate notification based on payment type
+                $this->createPaymentNotification($user->id, $payment, $car);
+                
+                // Debug: Log payment details for troubleshooting
+                \Log::info('Payment verification completed', [
+                    'payment_id' => $payment->id,
+                    'payment_schedule_id' => $payment->payment_schedule_id,
+                    'payment_description' => $payment->payment_description,
+                    'car_id' => $car->id,
+                    'user_id' => $user->id
+                ]);
+            } else {
+                // If no car found, still create a payment notification
+                $this->createPaymentNotification($user->id, $payment, null);
             }
+
+            return response()->json([
+                'message' => 'Payment verified successfully',
+                'data' => $data,
+                'payment_date' => $payment->created_at,
+                'car' => $car,
+                'payment' => $this->formatPayment($payment)
+            ]);
         }
 
-        return response()->json([
-            'message' => 'Payment verified successfully',
-            'data' => $data,
-            'payment_date' => $payment->created_at,
-            'car' => $car,
-            'payment' => $this->formatPayment($payment)
-        ]);
-    }
-
-    // Payment not successful or still pending
+    // Payment not successful or still pending - create notification
+    NotificationService::notifyPaymentOperation($user->id, 'failed', $payment);
+    
     return response()->json([
         'message' => 'Payment not successful',
         'data' => $data
@@ -859,6 +880,57 @@ private function getOrderTypeFromPaymentHead($paymentHeadName)
             } else {
                 return 'general_service';
             }
+    }
+}
+
+/**
+ * Create appropriate notification based on payment type
+ */
+private function createPaymentNotification($userId, $payment, $car)
+{
+    $isRenewal = false;
+    $paymentHeadName = '';
+    
+    // Get payment schedule to determine the type of payment
+    try {
+        // Load the payment schedule with its payment head
+        $paymentSchedule = PaymentSchedule::with('payment_head')->find($payment->payment_schedule_id);
+        
+        if ($paymentSchedule && $paymentSchedule->payment_head) {
+            $paymentHeadName = strtolower($paymentSchedule->payment_head->payment_head_name);
+            
+            // Check if this is a car renewal payment
+            if (strpos($paymentHeadName, 'license') !== false || 
+                strpos($paymentHeadName, 'renewal') !== false ||
+                strpos($paymentHeadName, 'vehicle license') !== false) {
+                $isRenewal = true;
+            }
+        }
+        
+        // Also check payment description for renewal keywords
+        if (!$isRenewal && $payment->payment_description) {
+            $description = strtolower($payment->payment_description);
+            if (strpos($description, 'license') !== false || 
+                strpos($description, 'renewal') !== false ||
+                strpos($description, 'vehicle license') !== false) {
+                $isRenewal = true;
+            }
+        }
+        
+    } catch (\Exception $e) {
+        // Log error but continue with generic notification
+        \Log::error('Error determining payment type for notification', [
+            'payment_id' => $payment->id,
+            'error' => $e->getMessage()
+        ]);
+    }
+    
+    if ($isRenewal && $car) {
+        // Create car renewal notification
+        NotificationService::notifyCarOperation($userId, 'renewed', $car, "Payment of ₦" . number_format($payment->amount, 2) . " completed successfully.");
+    } else {
+        // Create generic payment notification
+        NotificationService::notifyPaymentOperation($userId, 'completed', $payment);
     }
 }
 
