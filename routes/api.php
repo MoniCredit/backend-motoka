@@ -234,13 +234,28 @@ Route::get('/get-expiration', function () {
     return response()->json($mtd);
 });
 
-Route::middleware('auth:sanctum')->get('/reminder', [ReminderController::class, 'index']);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/reminder', [ReminderController::class, 'index']);
+    Route::post('/reminder', [ReminderController::class, 'store']);
+    Route::post('/reminder/{id}/mark-sent', [ReminderController::class, 'markAsSent']);
+    Route::delete('/reminder/{id}', [ReminderController::class, 'destroy']);
+    Route::post('/reminder/process', [ReminderController::class, 'processReminders']);
+});
 
 
 
 
-Route::middleware('auth:sanctum')->get('/notifications', [NotificationController::class, 'index']);
-Route::middleware('auth:sanctum')->post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+// Notification routes
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'getUnreadCount']);
+    Route::get('/notifications/type/{type}', [NotificationController::class, 'getByType']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+    Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
+    Route::delete('/notifications/{id}', [NotificationController::class, 'delete']);
+    Route::post('/notifications/test-car-renewal', [NotificationController::class, 'testCarRenewalNotification']);
+    Route::delete('/notifications/clear-all', [NotificationController::class, 'clearAllNotifications']);
+});
 
 
 
