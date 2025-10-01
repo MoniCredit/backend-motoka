@@ -70,17 +70,23 @@ class NotificationController extends Controller
     public function markAsRead($id)
     {
         $notification = Notification::find($id);
-        if ($notification) {
-            $notification->is_read = true;
-            $notification->save();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Notification marked as read.',
-            ]);
+        
+        if (!$notification) {
+            return response()->json(['status' => 'error', 'message' => 'Notification not found.'], 404);
         }
 
-        return response()->json(['status' => 'error', 'message' => 'Notification not found.'], 404);
+        // Check if user owns the notification
+        if ($notification->user_id !== Auth::user()->userId) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+
+        $notification->is_read = true;
+        $notification->save();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Notification marked as read.',
+        ]);
     }
 
     public function markAllAsRead()
