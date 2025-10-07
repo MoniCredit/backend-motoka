@@ -18,6 +18,8 @@ class AgentPayment extends Model
         'status',
         'paid_at',
         'notes',
+        'transfer_reference',
+        'paystack_transfer_id',
     ];
 
     protected $casts = [

@@ -210,6 +210,9 @@ Route::prefix('verify')->group(function () {
 // Add this outside the auth:sanctum group, since user is not authenticated yet
 Route::post('/2fa/verify-login', [TwoFactorController::class, 'verifyLogin2fa']);
 
+// Paystack webhooks (no authentication required)
+Route::post('/webhooks/paystack/transfer', [App\Http\Controllers\PaystackWebhookController::class, 'handleTransferWebhook']);
+
 Route::get('/get-expiration', function () {
     $getAllCars = Car::where('user_id', 'J89SPg')->get();
     $mtd = [];
@@ -244,6 +247,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
 
 
+
+// Bank routes
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/banks', [App\Http\Controllers\BankController::class, 'getBanks']);
+    Route::post('/banks/verify-account', [App\Http\Controllers\BankController::class, 'verifyAccount']);
+});
 
 // Notification routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -323,6 +332,7 @@ Route::middleware(['cors', 'auth:sanctum', 'admin'])->prefix('admin')->group(fun
     // Agents
     Route::get('/agents', [AdminController::class, 'getAgents']);
     Route::get('/agents/{slug}', [AdminController::class, 'getAgent']);
+    Route::post('/agents/check-state', [AdminController::class, 'checkAgentState']);
     Route::post('/agents', [AdminController::class, 'createAgent']);
     Route::get('/agents/uuid/{uuid}', [AdminController::class, 'getAgentByUuid']);
     Route::put('/agents/uuid/{uuid}/status', [AdminController::class, 'updateAgentStatus']);
