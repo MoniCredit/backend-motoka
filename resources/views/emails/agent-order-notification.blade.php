@@ -64,8 +64,8 @@
 </head>
 <body>
     <div class="header">
-        <h1>🚗 New Order Assigned - Motoka</h1>
-        <p>You have been assigned a new car registration order</p>
+        <h1>🚗 {{ $payment_details ? 'Order Assigned with Payment Receipt' : 'New Order Assigned' }} - Motoka</h1>
+        <p>{{ $payment_details ? 'You have been assigned an order with payment confirmation' : 'You have been assigned a new car registration order' }}</p>
     </div>
 
     <div class="content">
@@ -84,10 +84,12 @@
                 <span class="detail-label">Vehicle:</span>
                 <span class="detail-value">{{ $order->car->vehicle_make }} {{ $order->car->vehicle_model }}</span>
             </div>
+            @if($payment_details)
             <div class="detail-row">
-                <span class="detail-label">Amount:</span>
-                <span class="detail-value">₦{{ number_format($order->amount, 2) }}</span>
+                <span class="detail-label">Amount Paid to You:</span>
+                <span class="detail-value" style="color: #28a745; font-weight: bold;">₦{{ number_format($payment_details['amount'], 2) }}</span>
             </div>
+            @endif
             <div class="detail-row">
                 <span class="detail-label">Delivery Address:</span>
                 <span class="detail-value">{{ $order->delivery_address }}</span>
@@ -112,6 +114,28 @@
             @endif
         </div>
 
+        @if($payment_details)
+        <h2>💰 Payment Receipt</h2>
+        <div class="order-details" style="border-left-color: #28a745;">
+            <div class="detail-row">
+                <span class="detail-label">Transfer Reference:</span>
+                <span class="detail-value" style="font-family: monospace;">{{ $payment_details['transfer_reference'] }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Amount Paid:</span>
+                <span class="detail-value" style="color: #28a745; font-weight: bold;">₦{{ number_format($payment_details['amount'], 2) }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Status:</span>
+                <span class="detail-value" style="color: #28a745; font-weight: bold;">{{ $payment_details['status'] ?? 'Completed' }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Paid At:</span>
+                <span class="detail-value">{{ now()->format('Y-m-d H:i:s') }}</span>
+            </div>
+        </div>
+        @endif
+
         <div class="whatsapp-section">
             <h3>📱 WhatsApp Message</h3>
             <p>Copy this message to send via WhatsApp:</p>
@@ -121,10 +145,15 @@
         <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 20px 0;">
             <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ Important Instructions</h4>
             <ul style="margin: 0; padding-left: 20px; color: #856404;">
-                <li>Contact the customer within 24 hours</li>
+                <li>Process the order according to the service type</li>
                 <li>Verify the delivery address and contact details</li>
                 <li>Update the order status once work begins</li>
-                <li>Mark as completed when the task is finished</li>
+                <li>Return completed documents to admin when finished</li>
+                @if($payment_details)
+                <li style="color: #28a745; font-weight: bold;">✅ Payment confirmed - proceed with confidence!</li>
+                @else
+                <li>Payment details will be sent once payment is processed</li>
+                @endif
             </ul>
         </div>
     </div>

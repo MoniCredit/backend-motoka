@@ -267,7 +267,7 @@ class AdminController extends Controller
     }
 
     /**
-     * Process order - assign to agent based on state
+     * Process order - assign to agent and initiate payment
      */
     public function processOrder(Request $request, $slug)
     {
@@ -279,6 +279,11 @@ class AdminController extends Controller
                 'message' => 'Unauthorized access'
             ], 403);
         }
+
+        $request->validate([
+            'commission_rate' => 'nullable|numeric|min:0|max:100',
+            'initiate_payment' => 'nullable|boolean'
+        ]);
 
         $order = Order::where('slug', $slug)->first();
         if (!$order) {
@@ -309,6 +314,15 @@ class AdminController extends Controller
             ], 404);
         }
 
+        // Check if agent has bank details
+        if (empty($agent->account_number) || empty($agent->bank_name)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Agent bank details are incomplete. Please update agent information.',
+                'agent' => $agent
+            ], 400);
+        }
+
         // Assign agent to order
         $order->update([
             'agent_id' => $agent->id,
@@ -317,16 +331,81 @@ class AdminController extends Controller
             'processed_by' => $admin->id,
         ]);
 
-        // Send notification to agent (WhatsApp and Email)
-        $this->notifyAgent($order, $agent);
+        $responseData = [
+            'order' => $order->load('agent'),
+            'agent' => $agent,
+            'payment_required' => true,
+            'payment_details' => [
+                'order_amount' => $order->amount,
+                'commission_rate' => $request->commission_rate ?? 10,
+                'commission_amount' => ($order->amount * ($request->commission_rate ?? 10)) / 100,
+                'agent_amount' => $order->amount - (($order->amount * ($request->commission_rate ?? 10)) / 100),
+                'agent_bank_details' => [
+                    'bank_name' => $agent->bank_name,
+                    'account_number' => $agent->account_number,
+                    'account_name' => $agent->account_name
+                ]
+            ]
+        ];
+
+        // Initiate payment if requested
+        if ($request->initiate_payment) {
+            $commissionRate = $request->commission_rate ?? 10;
+            $transferResult = \App\Services\PaystackTransferService::initiateTransfer(
+                $order, 
+                $agent, 
+                $order->amount, 
+                $commissionRate
+            );
+
+            if ($transferResult['success']) {
+                $responseData['payment_initiated'] = true;
+                $responseData['transfer_reference'] = $transferResult['transfer_reference'];
+                $responseData['payment_details']['transfer_reference'] = $transferResult['transfer_reference'];
+                $responseData['payment_details']['agent_payment_id'] = $transferResult['agent_payment_id'];
+                
+                // Send notification to agent about payment
+                $this->notifyAgentPayment($order, $agent, $transferResult);
+            } else if (isset($transferResult['manual_payment_required']) && $transferResult['manual_payment_required']) {
+                // Handle manual payment scenario
+                $responseData['manual_payment_required'] = true;
+                $responseData['transfer_reference'] = $transferResult['transfer_reference'];
+                $responseData['payment_details']['transfer_reference'] = $transferResult['transfer_reference'];
+                $responseData['payment_details']['agent_payment_id'] = $transferResult['agent_payment_id'];
+                $responseData['agent_details'] = $transferResult['agent_details'];
+                
+                // Send notification to agent about manual payment
+                $this->notifyAgentManualPayment($order, $agent, $transferResult);
+            } else {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Failed to initiate payment: ' . $transferResult['message'],
+                    'data' => $responseData
+                ], 500);
+            }
+        }
+
+        // Only send notification to agent if payment was initiated
+        if ($request->initiate_payment) {
+            // Send notification to agent (WhatsApp and Email) only after payment
+            $paymentDetails = null;
+            if (isset($responseData['payment_details'])) {
+                $paymentDetails = [
+                    'transfer_reference' => $responseData['payment_details']['transfer_reference'] ?? null,
+                    'amount' => $responseData['payment_details']['agent_amount'] ?? 0,
+                    'commission_amount' => $responseData['payment_details']['commission_amount'] ?? 0,
+                    'status' => $responseData['manual_payment_required'] ? 'Manual Payment Required' : 'Completed'
+                ];
+            }
+            $this->notifyAgent($order, $agent, $paymentDetails);
+        }
 
         return response()->json([
             'status' => true,
-            'message' => 'Order assigned to agent successfully',
-            'data' => [
-                'order' => $order->load('agent'),
-                'agent' => $agent
-            ]
+            'message' => $request->initiate_payment ? 
+                'Order processed and payment initiated successfully. Agent has been notified.' : 
+                'Order assigned to agent successfully. Payment can be initiated.',
+            'data' => $responseData
         ]);
     }
 
@@ -502,7 +581,7 @@ class AdminController extends Controller
     /**
      * Notify agent about new order
      */
-    private function notifyAgent($order, $agent)
+    public function notifyAgent($order, $agent, $paymentDetails = null)
     {
         try {
             // Get state and LGA names
@@ -512,34 +591,64 @@ class AdminController extends Controller
             $stateName = $state ? $state->state_name : 'Unknown State';
             $lgaName = $lga ? $lga->lga_name : 'Unknown LGA';
             
-            // WhatsApp notification (placeholder - you'd integrate with WhatsApp API)
-            $whatsappMessage = "New Order Assigned!\n\n";
-            $whatsappMessage .= "Order ID: {$order->slug}\n";
-            $whatsappMessage .= "Customer: {$order->user->name}\n";
-            $whatsappMessage .= "Car: {$order->car->vehicle_make} {$order->car->vehicle_model}\n";
-            $whatsappMessage .= "Amount: ₦{$order->amount}\n";
-            $whatsappMessage .= "Address: {$order->delivery_address}\n";
-            $whatsappMessage .= "Contact: {$order->delivery_contact}\n";
-            $whatsappMessage .= "State: {$stateName}\n";
-            $whatsappMessage .= "LGA: {$lgaName}\n";
+            // WhatsApp notification
+            if ($paymentDetails) {
+                // Include payment receipt information
+                $whatsappMessage = "🎉 *Order Assigned with Payment Receipt!*\n\n";
+                $whatsappMessage .= "📋 *Order Details:*\n";
+                $whatsappMessage .= "Order ID: #{$order->slug}\n";
+                $whatsappMessage .= "Service: " . ucwords(str_replace('_', ' ', $order->order_type)) . "\n";
+                $whatsappMessage .= "Customer: {$order->user->firstName} {$order->user->lastName}\n";
+                $whatsappMessage .= "Phone: {$order->user->phone}\n";
+                $whatsappMessage .= "Car: {$order->car->vehicle_make} {$order->car->vehicle_model}\n";
+                $whatsappMessage .= "Address: {$order->delivery_address}\n";
+                $whatsappMessage .= "Contact: {$order->delivery_contact}\n";
+                $whatsappMessage .= "Location: {$stateName}, {$lgaName}\n\n";
+                
+                $whatsappMessage .= "💰 *Payment Receipt:*\n";
+                $whatsappMessage .= "Transfer Ref: {$paymentDetails['transfer_reference']}\n";
+                $whatsappMessage .= "Amount Paid: ₦" . number_format($paymentDetails['amount'], 2) . "\n";
+                $whatsappMessage .= "Status: " . ($paymentDetails['status'] ?? 'Completed') . "\n";
+                $whatsappMessage .= "Paid At: " . now()->format('Y-m-d H:i:s') . "\n\n";
+                
+                $whatsappMessage .= "✅ *Payment confirmed! Please process this order and return to admin.*";
+            } else {
+                // Regular order notification (without payment)
+                $whatsappMessage = "📋 *New Order Assigned!*\n\n";
+                $whatsappMessage .= "Order ID: #{$order->slug}\n";
+                $whatsappMessage .= "Service: " . ucwords(str_replace('_', ' ', $order->order_type)) . "\n";
+                $whatsappMessage .= "Customer: {$order->user->firstName} {$order->user->lastName}\n";
+                $whatsappMessage .= "Phone: {$order->user->phone}\n";
+                $whatsappMessage .= "Car: {$order->car->vehicle_make} {$order->car->vehicle_model}\n";
+                $whatsappMessage .= "Amount: ₦{$order->amount}\n";
+                $whatsappMessage .= "Address: {$order->delivery_address}\n";
+                $whatsappMessage .= "Contact: {$order->delivery_contact}\n";
+                $whatsappMessage .= "Location: {$stateName}, {$lgaName}\n\n";
+                $whatsappMessage .= "⏳ *Payment pending. You will receive payment details once payment is processed.*";
+            }
 
             // Email notification
             $emailData = [
                 'agent' => $agent,
                 'order' => $order,
+                'payment_details' => $paymentDetails,
                 'whatsapp_message' => $whatsappMessage,
                 'stateName' => $stateName,
                 'lgaName' => $lgaName
             ];
 
-            Mail::send('emails.agent-order-notification', $emailData, function ($message) use ($agent, $order) {
-                $message->to($agent->email)
-                    ->subject("New Order Assigned - {$order->slug}");
+            $subject = $paymentDetails ? 
+                "Order Assigned with Payment Receipt - {$order->slug}" : 
+                "New Order Assigned - {$order->slug}";
+
+            Mail::send('emails.agent-order-notification', $emailData, function ($message) use ($agent, $order, $subject) {
+                $message->to($agent->email)->subject($subject);
             });
 
-            Log::info('Agent notified about new order', [
+            Log::info('Agent notified about order', [
                 'agent_id' => $agent->id,
                 'order_slug' => $order->slug,
+                'has_payment' => $paymentDetails ? true : false,
                 'whatsapp_message' => $whatsappMessage
             ]);
 
@@ -603,6 +712,46 @@ class AdminController extends Controller
     }
 
     /**
+     * Check if agent exists for a state
+     */
+    public function checkAgentState(Request $request)
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $request->validate([
+            'state' => 'required|string'
+        ]);
+
+        $existingAgent = \App\Models\Agent::where('state', $request->state)
+            ->where('status', '!=', 'deleted')
+            ->first();
+
+        if ($existingAgent) {
+            return response()->json([
+                'status' => false,
+                'message' => "An agent already exists for {$request->state} state. Only one agent is allowed per state.",
+                'existing_agent' => [
+                    'name' => $existingAgent->first_name . ' ' . $existingAgent->last_name,
+                    'email' => $existingAgent->email,
+                    'state' => $existingAgent->state
+                ]
+            ], 422);
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'State is available for new agent'
+        ]);
+    }
+
+    /**
      * Create a new agent
      */
     public function createAgent(Request $request)
@@ -626,6 +775,7 @@ class AdminController extends Controller
             'lga' => 'required|string',
             'account_number' => 'nullable|string|max:20',
             'bank_name' => 'nullable|string|max:255',
+            'bank_code' => 'nullable|string|max:10',
             'account_name' => 'nullable|string|max:255',
             'profile_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'nin_front_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
@@ -633,10 +783,27 @@ class AdminController extends Controller
             'notes' => 'nullable|string',
         ]);
 
+        // Check if an agent already exists for this state
+        $existingAgent = \App\Models\Agent::where('state', $request->state)
+            ->where('status', '!=', 'deleted')
+            ->first();
+
+        if ($existingAgent) {
+            return response()->json([
+                'status' => false,
+                'message' => "An agent already exists for {$request->state} state. Only one agent is allowed per state.",
+                'existing_agent' => [
+                    'name' => $existingAgent->first_name . ' ' . $existingAgent->last_name,
+                    'email' => $existingAgent->email,
+                    'state' => $existingAgent->state
+                ]
+            ], 422);
+        }
+
         try {
             $agentData = $request->only([
                 'first_name', 'last_name', 'email', 'phone', 'address',
-                'state', 'lga', 'account_number', 'bank_name', 'account_name',
+                'state', 'lga', 'account_number', 'bank_name', 'bank_code', 'account_name',
                 'notes'
             ]);
 
@@ -864,6 +1031,7 @@ class AdminController extends Controller
                 'lga' => 'required|string',
                 'account_number' => 'nullable|string|max:20',
                 'bank_name' => 'nullable|string|max:255',
+                'bank_code' => 'nullable|string|max:10',
                 'account_name' => 'nullable|string|max:255',
                 'profile_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
                 'nin_front_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
@@ -871,9 +1039,27 @@ class AdminController extends Controller
                 'notes' => 'nullable|string',
             ]);
 
+            // Check if another agent already exists for this state (excluding current agent)
+            $existingAgent = \App\Models\Agent::where('state', $request->state)
+                ->where('status', '!=', 'deleted')
+                ->where('id', '!=', $agent->id)
+                ->first();
+
+            if ($existingAgent) {
+                return response()->json([
+                    'status' => false,
+                    'message' => "Another agent already exists for {$request->state} state. Only one agent is allowed per state.",
+                    'existing_agent' => [
+                        'name' => $existingAgent->first_name . ' ' . $existingAgent->last_name,
+                        'email' => $existingAgent->email,
+                        'state' => $existingAgent->state
+                    ]
+                ], 422);
+            }
+
             $agentData = $request->only([
                 'first_name', 'last_name', 'email', 'phone', 'address',
-                'state', 'lga', 'account_number', 'bank_name', 'account_name',
+                'state', 'lga', 'account_number', 'bank_name', 'bank_code', 'account_name',
                 'notes'
             ]);
 
@@ -1192,6 +1378,80 @@ class AdminController extends Controller
     {
         // Agent gets the full order amount
         return $order->amount;
+    }
+
+    /**
+     * Send payment notification to agent
+     */
+    private function notifyAgentPayment(Order $order, Agent $agent, $transferResult)
+    {
+        try {
+            // Send WhatsApp notification
+            $whatsappMessage = "💰 *Payment Initiated!*\n\n";
+            $whatsappMessage .= "Order ID: #{$order->slug}\n";
+            $whatsappMessage .= "Service: " . ucwords(str_replace('_', ' ', $order->order_type)) . "\n";
+            $whatsappMessage .= "Amount: ₦" . number_format($transferResult['amount'], 2) . "\n";
+            $whatsappMessage .= "Commission: ₦" . number_format($transferResult['commission_amount'], 2) . "\n";
+            $whatsappMessage .= "Transfer Ref: {$transferResult['transfer_reference']}\n";
+            $whatsappMessage .= "Status: Pending\n\n";
+            $whatsappMessage .= "Customer Details:\n";
+            $whatsappMessage .= "Name: {$order->user->firstName} {$order->user->lastName}\n";
+            $whatsappMessage .= "Phone: {$order->user->phone}\n";
+            $whatsappMessage .= "Address: {$order->delivery_address}\n\n";
+            $whatsappMessage .= "Payment will be processed shortly. Please wait for confirmation.";
+
+            // TODO: Implement WhatsApp sending
+            \Log::info('Payment notification prepared for agent', [
+                'agent_phone' => $agent->phone,
+                'order_slug' => $order->slug,
+                'transfer_reference' => $transferResult['transfer_reference'],
+                'message' => $whatsappMessage
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to send payment notification to agent', [
+                'order_slug' => $order->slug,
+                'agent_id' => $agent->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Send manual payment notification to agent
+     */
+    private function notifyAgentManualPayment(Order $order, Agent $agent, $transferResult)
+    {
+        try {
+            // Send WhatsApp notification for manual payment
+            $whatsappMessage = "📋 *Manual Payment Required*\n\n";
+            $whatsappMessage .= "Order ID: #{$order->slug}\n";
+            $whatsappMessage .= "Service: " . ucwords(str_replace('_', ' ', $order->order_type)) . "\n";
+            $whatsappMessage .= "Amount: ₦" . number_format($transferResult['amount'], 2) . "\n";
+            $whatsappMessage .= "Commission: ₦" . number_format($transferResult['commission_amount'], 2) . "\n";
+            $whatsappMessage .= "Transfer Ref: {$transferResult['transfer_reference']}\n";
+            $whatsappMessage .= "Status: Manual Payment Required\n\n";
+            $whatsappMessage .= "Customer Details:\n";
+            $whatsappMessage .= "Name: {$order->user->firstName} {$order->user->lastName}\n";
+            $whatsappMessage .= "Phone: {$order->user->phone}\n";
+            $whatsappMessage .= "Address: {$order->delivery_address}\n\n";
+            $whatsappMessage .= "⚠️ Due to account limitations, payment will be processed manually. Please contact admin for payment confirmation.";
+
+            // TODO: Implement WhatsApp sending
+            \Log::info('Manual payment notification prepared for agent', [
+                'agent_phone' => $agent->phone,
+                'order_slug' => $order->slug,
+                'transfer_reference' => $transferResult['transfer_reference'],
+                'message' => $whatsappMessage
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to send manual payment notification to agent', [
+                'order_slug' => $order->slug,
+                'agent_id' => $agent->id,
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 
     /**
