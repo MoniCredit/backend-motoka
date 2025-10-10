@@ -1021,6 +1021,13 @@ class AdminController extends Controller
                 ], 404);
             }
 
+            // Debug: Log received data
+            // \Log::info('Agent update request received', [
+            //     'uuid' => $uuid,
+            //     'received_data' => $request->all(),
+            //     'agent_id' => $agent->id
+            // ]);
+
             $request->validate([
                 'first_name' => 'required|string|max:255',
                 'last_name' => 'required|string|max:255',
