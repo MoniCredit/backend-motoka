@@ -18,7 +18,7 @@ class RevenueHeadSeeder extends Seeder
 			array(
 				'id' => '1',
 				'revenue_head_name' => 'MOTOKA PAYMENT',
-				'revenue_head_code' => env('MOTOKA_REVENUE_HEAD_CODE', 'REV67505e736a592'),
+				'revenue_head_code' => env('MOTOKA_REVENUE_HEAD_CODE', 'REV68dff2878cb81'),
 				'bank_id' => '1',
 				'gateway_id' => '1',
 				'fee_bearer' => 'merchant',
