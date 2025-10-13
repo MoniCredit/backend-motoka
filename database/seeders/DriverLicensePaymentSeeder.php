@@ -25,7 +25,7 @@ class DriverLicensePaymentSeeder extends Seeder
             [
                 'type' => 'lost_damaged',
                 'name' => "Driver's License Replacement",
-                'amount' => 200,
+                'amount' => 250,
                 'revenue_head_code' => 'REV67505e736a592',
             ],
         ];
