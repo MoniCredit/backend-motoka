@@ -14,19 +14,19 @@ class DriverLicensePaymentSeeder extends Seeder
                 'type' => 'new',
                 'name' => "Driver's License (New)",
                 'amount' => 200,
-                'revenue_head_code' => 'REV67505e736a592', // Use the real code
+                'revenue_head_code' => 'REV68dff2878cb81', // Use the real code
             ],
             [
                 'type' => 'renew',
                 'name' => "Driver's License Renewal",
                 'amount' => 150,
-                'revenue_head_code' => 'REV67505e736a592',
+                'revenue_head_code' => 'REV68dff2878cb81',
             ],
             [
                 'type' => 'lost_damaged',
                 'name' => "Driver's License Replacement",
                 'amount' => 250,
-                'revenue_head_code' => 'REV67505e736a592',
+                'revenue_head_code' => 'REV68dff2878cb81',
             ],
         ];
         foreach ($options as $option) {

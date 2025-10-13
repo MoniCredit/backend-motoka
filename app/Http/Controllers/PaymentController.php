@@ -125,7 +125,7 @@ class PaymentController extends Controller
         $items[] = [
             'unit_cost' => $deliveryFee,
             'item' => 'Delivery Fee',
-            'revenue_head_code' => 'REV67505e736a592', // Use the valid MOTOKA PAYMENT revenue head code
+            'revenue_head_code' => 'REV68dff2878cb81', // Use the valid MOTOKA PAYMENT revenue head code
         ];
     }
 
