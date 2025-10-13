@@ -10,6 +10,6 @@ class DriverLicensePayment extends Model
     use HasFactory;
 
     protected $fillable = [
-        'type', 'name', 'amount',
+        'type', 'name', 'amount', 'revenue_head_code',
     ];
 } 
