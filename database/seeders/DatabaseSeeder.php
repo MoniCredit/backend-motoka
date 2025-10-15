@@ -26,6 +26,9 @@ class DatabaseSeeder extends Seeder
             PaymentScheduleSeeder::class,
             DeliveryFeeSeeder::class,
             OrderDocumentTypeSeeder::class,
+            DriverLicensePaymentSeeder::class,
+            StatesLgasSeeder::class,
+            AdminUserSeeder::class,
         ]);
 
         $admin = array(
