@@ -331,6 +331,16 @@ public function verifyPayment($transaction_id)
 
                 // Create order for admin processing
                 $this->createOrderFromPayment($payment, $car, $user);
+                
+                // Debug: Log order creation for Monicredit payments
+                \Log::info('Monicredit payment processed - Order creation attempted', [
+                    'payment_id' => $payment->id,
+                    'payment_gateway' => $payment->payment_gateway,
+                    'payment_status' => $payment->status,
+                    'car_id' => $car->id,
+                    'user_id' => $user->id,
+                    'order_count' => \App\Models\Order::where('payment_id', $payment->id)->count()
+                ]);
 
                 // Get the userId string from the user model
                 $userModel = \App\Models\User::find($payment->user_id);
@@ -698,6 +708,11 @@ private function createOrderFromPayment($payment, $car, $user)
         // Get payment schedule details
         $paymentSchedule = $payment->paymentSchedule;
         if (!$paymentSchedule) {
+            \Log::error('Failed to create order - Payment schedule not found', [
+                'payment_id' => $payment->id,
+                'payment_schedule_id' => $payment->payment_schedule_id,
+                'payment_gateway' => $payment->payment_gateway
+            ]);
             return;
         }
 
@@ -712,7 +727,7 @@ private function createOrderFromPayment($payment, $car, $user)
         $lgaId = $metaData['lga_id'] ?? null;
 
         // Create order
-        \App\Models\Order::create([
+        $order = \App\Models\Order::create([
             'slug' => \Illuminate\Support\Str::uuid(),
             'user_id' => $user->id,
             'car_id' => $car->id,
@@ -725,6 +740,13 @@ private function createOrderFromPayment($payment, $car, $user)
             'state' => $stateId,
             'lga' => $lgaId,
             'notes' => "Payment via {$payment->payment_gateway} - {$paymentSchedule->payment_head->payment_head_name}",
+        ]);
+        
+        \Log::info('Order created successfully from payment', [
+            'order_id' => $order->id,
+            'payment_id' => $payment->id,
+            'payment_gateway' => $payment->payment_gateway,
+            'order_type' => $orderType
         ]);
 
     } catch (\Exception $e) {
@@ -760,7 +782,7 @@ private function createOrderFromPayment($payment, $car, $user)
         ]);
     
     $car = \App\Models\Car::where('slug', $request->car_slug)
-        ->where('user_id', $user->userId) // Use userId field instead of id
+        ->where('user_id', $user->userId) 
         ->first();
 
     \Log::info('🚗 Car lookup result', [
