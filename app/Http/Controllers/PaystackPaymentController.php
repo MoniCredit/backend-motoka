@@ -356,31 +356,40 @@ class PaystackPaymentController extends Controller
 
             // Check if payment is successful
             if ($data['data']['status'] === 'success') {
-                // Update car status
-                $car = \App\Models\Car::find($payment->car_id);
-                if ($car) {
-                    $car->status = 'active';
-                    $car->save();
+                // Handle different payment types
+                $metaData = $payment->meta_data ?? [];
+                $paymentType = $metaData['payment_type'] ?? 'car';
 
-                    // Create order for admin processing (only if not already created)
-                    $this->createOrderFromPayment($payment, $car, $user);
-                    
-                    // Verify orders were created
-                    $orderCount = \App\Models\Order::where('payment_id', $payment->id)->count();
-                    if ($orderCount === 0) {
-                        // If no orders created, try again with error logging
-                        \Log::error('No orders created for payment, retrying...', [
-                            'payment_id' => $payment->id,
-                            'gateway_reference' => $payment->gateway_reference
-                        ]);
+                if ($paymentType === 'driver_license') {
+                    // Handle driver license payment
+                    $this->handleDriverLicensePaymentSuccess($payment, $user, $metaData);
+                } else {
+                    // Handle car payment (existing logic)
+                    $car = \App\Models\Car::find($payment->car_id);
+                    if ($car) {
+                        $car->status = 'active';
+                        $car->save();
+
+                        // Create order for admin processing (only if not already created)
                         $this->createOrderFromPayment($payment, $car, $user);
+                        
+                        // Verify orders were created
+                        $orderCount = \App\Models\Order::where('payment_id', $payment->id)->count();
+                        if ($orderCount === 0) {
+                            // If no orders created, try again with error logging
+                            \Log::error('No orders created for payment, retrying...', [
+                                'payment_id' => $payment->id,
+                                'gateway_reference' => $payment->gateway_reference
+                            ]);
+                            $this->createOrderFromPayment($payment, $car, $user);
+                        }
+
+                        // Handle reminders - update to "Processing" status
+                        $this->updateCarReminders($payment, $car);
+
+                        // Create appropriate notification based on payment type
+                        $this->createPaymentNotification($user->id, $payment, $car);
                     }
-
-                    // Handle reminders - update to "Processing" status
-                    $this->updateCarReminders($payment, $car);
-
-                    // Create appropriate notification based on payment type
-                    $this->createPaymentNotification($user->id, $payment, $car);
                 }
 
                 return response()->json([
@@ -388,8 +397,7 @@ class PaystackPaymentController extends Controller
                     'message' => 'Payment verified successfully',
                     'data' => $data,
                     'payment_date' => $payment->created_at,
-                    'car' => $car,
-                    // 'payment' => $this->formatPayment($payment)
+                    'payment' => $this->formatPayment($payment)
                 ]);
             }
 
@@ -951,6 +959,83 @@ class PaystackPaymentController extends Controller
         } else {
             // Create generic payment notification
             NotificationService::notifyPaymentOperation($userId, 'completed', $payment);
+        }
+    }
+
+    /**
+     * Handle successful driver license payment
+     */
+    private function handleDriverLicensePaymentSuccess($payment, $user, $metaData)
+    {
+        try {
+            $driverLicenseId = $metaData['driver_license_id'] ?? null;
+            
+            if (!$driverLicenseId) {
+                \Log::error('Driver license ID not found in payment metadata', [
+                    'payment_id' => $payment->id,
+                    'meta_data' => $metaData
+                ]);
+                return;
+            }
+
+            // Security: Validate payment amount against license_year calculation
+           
+            $licenseYear = $metaData['license_year'] ?? null;
+            $baseAmount = $metaData['base_amount'] ?? null;
+            $expectedAmount = $baseAmount * $licenseYear;
+            
+            // Security: Validate payment amount against license_year calculation
+            
+            if ($payment->amount !== $expectedAmount) {
+                \Log::error('Payment amount tampering detected in Paystack payment', [
+                    'payment_id' => $payment->id,
+                    'expected_amount' => $expectedAmount,
+                    'actual_amount' => $payment->amount,
+                    'base_amount' => $baseAmount,
+                    'license_year' => $licenseYear
+                ]);
+                
+                // Mark payment as suspicious but still process
+                $payment->update(['status' => 'suspicious']);
+                return;
+            }
+
+            // Update driver license status
+            $driverLicense = \App\Models\DriverLicense::find($driverLicenseId);
+            if ($driverLicense) {
+                $driverLicense->status = 'active';
+                $driverLicense->save();
+
+                // Update the corresponding DriverLicenseTransaction
+                $driverLicenseTransaction = \App\Models\DriverLicenseTransaction::where('transaction_id', $payment->transaction_id)->first();
+                if ($driverLicenseTransaction) {
+                    $driverLicenseTransaction->update([
+                        'status' => 'approved',
+                        'raw_response' => $payment->raw_response
+                    ]);
+                }
+
+                // Create notification for driver license payment completion
+                \App\Services\NotificationService::notifyDriverLicenseOperation($user->userId, 'payment_completed', $driverLicense);
+
+                \Log::info('Driver license payment processed successfully via Paystack', [
+                    'payment_id' => $payment->id,
+                    'driver_license_id' => $driverLicenseId,
+                    'license_slug' => $driverLicense->slug,
+                    'user_id' => $user->id,
+                    'payment_gateway' => 'paystack'
+                ]);
+            } else {
+                \Log::error('Driver license not found for payment', [
+                    'payment_id' => $payment->id,
+                    'driver_license_id' => $driverLicenseId
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to handle driver license payment success via Paystack', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 

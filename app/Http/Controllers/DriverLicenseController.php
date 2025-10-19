@@ -168,13 +168,52 @@ class DriverLicenseController extends Controller
         if (!$option) {
             return response()->json(['status' => 'error', 'message' => 'Invalid license type for payment'], 400);
         }
+
+        // Validate and calculate payment amount based on license_year
+        $licenseYear = $license->license_year;
+        if (!$licenseYear || $licenseYear < 1 || $licenseYear > 10) {
+            return response()->json([
+                'status' => 'error', 
+                'message' => 'Invalid license year. Must be between 1 and 10 years.'
+            ], 400);
+        }
+
+        // Security: Ensure license is not already paid for
+        if ($license->status === 'active') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This license has already been paid for and is active.'
+            ], 400);
+        }
+
+        // Security: Check for existing pending payments for this license
+        $existingPayment = \App\Models\Payment::where('meta_data->driver_license_id', $license->id)
+            ->whereIn('status', ['pending', 'completed'])
+            ->first();
+            
+        if ($existingPayment) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'A payment is already in progress or completed for this license.'
+            ], 400);
+        }
+
+        // Calculate total amount: base_amount * license_year
+        $baseAmount = $option->amount;
+        $totalAmount = $baseAmount * $licenseYear;
+
         $user = Auth::user();
         $transaction_id = Str::random(10);
+        
         // Use the full driver license record as meta_data
         $metaData = $license->toArray();
+        $metaData['base_amount'] = $baseAmount;
+        $metaData['license_year'] = $licenseYear;
+        $metaData['total_amount'] = $totalAmount;
+        
         $items = [[
-            'unit_cost' => $option->amount,
-            'item' => $option->name,
+            'unit_cost' => $totalAmount, // Use calculated total amount
+            'item' => $option->name . " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")",
             'revenue_head_code' => $option->revenue_head_code,
         ]];
         $payload = [
@@ -190,7 +229,7 @@ class DriverLicenseController extends Controller
             'items' => $items,
             'currency' => 'NGN',
             'paytype' => 'inline',
-            'total_amount' => $option->amount,
+            'total_amount' => $totalAmount, // Use calculated total amount
             'meta_data' => $metaData,
         ];
         // Check if MONICREDIT_BASE_URL is configured
@@ -222,14 +261,37 @@ class DriverLicenseController extends Controller
         // Save transaction
         $txn = DriverLicenseTransaction::create([
             'transaction_id' => $transaction_id,
-            'amount' => $option->amount,
+            'amount' => $totalAmount, // Use calculated total amount
             'driver_license_id' => $license->id,
             'status' => 'pending',
             'reference_code' => $data['id'] ?? null,
-            'payment_description' => $option->name,
+            'payment_description' => $option->name . " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")",
             'user_id' => $user->id,
             'raw_response' => $data,
             'meta_data' => json_encode($metaData),
+        ]);
+
+        // Also create a unified Payment record for consolidated verification
+        $unifiedPayment = \App\Models\Payment::create([
+            'transaction_id' => $transaction_id,
+            'gateway_reference' => $data['id'] ?? null,
+            'amount' => $totalAmount, // Use calculated total amount
+            'user_id' => $user->id,
+            'payment_gateway' => 'monicredit',
+            'status' => 'pending',
+            'payment_description' => $option->name . " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")",
+            'raw_response' => $data,
+            'payment_schedule_id' => [], // Driver license payments don't have payment schedules
+            'meta_data' => [
+                'driver_license_id' => $license->id,
+                'driver_license_slug' => $license->slug,
+                'license_type' => $license->license_type,
+                'payment_type' => 'driver_license',
+                'revenue_head_code' => $option->revenue_head_code,
+                'base_amount' => $baseAmount,
+                'license_year' => $licenseYear,
+                'total_amount' => $totalAmount,
+            ],
         ]);
         return response()->json([
             'message' => 'Payment initialized successfully',
@@ -241,89 +303,214 @@ class DriverLicenseController extends Controller
         ]);
     }
 
-    // Verify payment for a specific license (Monicredit integration)
-    public function verifyPaymentForLicense(Request $request, $slug)
+    // Note: verifyPaymentForLicense method removed - now using unified payment verification endpoint
+    // Use: POST /api/payment/verify-payment/{transaction_id}
+
+    /**
+     * Initialize Paystack payment for driver license
+     */
+    public function initializePaystackPaymentForLicense(Request $request, $slug)
     {
         $user = Auth::user();
         
-        // EARLY ACCESS CONTROL: Check if user owns this license BEFORE making API call
+        // Validate license ownership
         $license = \App\Models\DriverLicense::where('slug', $slug)
             ->where('user_id', $user->userId)
             ->first();
             
         if (!$license) {
-            Log::warning('Unauthorized license verification attempt', [
-                'user_id' => $user->id,
-                'user_userId' => $user->userId,
-                'license_id' => $slug,
-                'ip' => request()->ip()
-            ]);
-            
             return response()->json([
-                'status' => 'error', 
+                'status' => false,
                 'message' => 'License not found or access denied'
             ], 404);
         }
-        
-        $txn = DriverLicenseTransaction::where('driver_license_id', $license->id)
-            ->orderBy('created_at', 'desc')
+
+        // Get payment option for license type
+        $option = DriverLicensePayment::where('type', $license->license_type)->first();
+        if (!$option) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invalid license type for payment'
+            ], 400);
+        }
+
+        // Validate and calculate payment amount based on license_year
+        $licenseYear = $license->license_year;
+        if (!$licenseYear || $licenseYear < 1 || $licenseYear > 10) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invalid license year. Must be between 1 and 10 years.'
+            ], 400);
+        }
+
+        // Security: Ensure license is not already paid for
+        if ($license->status === 'active') {
+            return response()->json([
+                'status' => false,
+                'message' => 'This license has already been paid for and is active.'
+            ], 400);
+        }
+
+        // Security: Check for existing pending payments for this license
+        $existingPayment = \App\Models\Payment::where('meta_data->driver_license_id', $license->id)
+            ->whereIn('status', ['pending', 'completed'])
             ->first();
             
-        if (!$txn) {
+        if ($existingPayment) {
             return response()->json([
-                'status' => 'error', 
-                'message' => 'No payment transaction found'
-            ], 404);
+                'status' => false,
+                'message' => 'A payment is already in progress or completed for this license.'
+            ], 400);
         }
-        // Check if MONICREDIT_BASE_URL is configured
-        $baseUrl = env('MONICREDIT_BASE_URL');
-        if (empty($baseUrl)) {
+
+        // Calculate total amount: base_amount * license_year
+        $baseAmount = $option->amount;
+        $totalAmount = $baseAmount * $licenseYear;
+
+        $transaction_id = Str::random(10);
+
+        // Check if Paystack secret key is configured
+        $secretKey = env('PAYSTACK_SECRET_KEY');
+        if (empty($secretKey)) {
             return response()->json([
                 'status' => false,
                 'message' => 'Payment gateway configuration error. Please contact support.',
-                'error' => 'MONICREDIT_BASE_URL not configured'
+                'error' => 'PAYSTACK_SECRET_KEY not configured'
             ], 500);
         }
 
+        // Create unified Payment record for driver license
+        $payment = \App\Models\Payment::create([
+            'transaction_id' => $transaction_id,
+            'amount' => $totalAmount, // Use calculated total amount
+            'user_id' => $user->id,
+            'payment_gateway' => 'paystack',
+            'status' => 'pending',
+            'payment_description' => $option->name . " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")",
+            'payment_schedule_id' => [], // Driver license payments don't have payment schedules
+            'meta_data' => [
+                'driver_license_id' => $license->id,
+                'driver_license_slug' => $license->slug,
+                'license_type' => $license->license_type,
+                'payment_type' => 'driver_license',
+                'revenue_head_code' => $option->revenue_head_code,
+                'license_data' => $license->toArray(),
+                'base_amount' => $baseAmount,
+                'license_year' => $licenseYear,
+                'total_amount' => $totalAmount,
+            ],
+        ]);
+
+        // Also create DriverLicenseTransaction for backward compatibility
+        $txn = DriverLicenseTransaction::create([
+            'transaction_id' => $transaction_id,
+            'amount' => $totalAmount, // Use calculated total amount
+            'driver_license_id' => $license->id,
+            'status' => 'pending',
+            'payment_description' => $option->name . " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")",
+            'user_id' => $user->id,
+            'meta_data' => json_encode(array_merge($license->toArray(), [
+                'base_amount' => $baseAmount,
+                'license_year' => $licenseYear,
+                'total_amount' => $totalAmount,
+            ])),
+        ]);
+
+        // Prepare Paystack payload
+        $payload = [
+            'email' => $user->email,
+            'amount' => $totalAmount * 100, // Paystack expects amount in kobo
+            'reference' => $transaction_id,
+            'currency' => 'NGN',
+            'callback_url' => env('FRONTEND_URL', 'https://motoka.vercel.app') . '/payment/paystack/callback',
+            'metadata' => [
+                'user_id' => $user->id,
+                'driver_license_id' => $license->id,
+                'driver_license_slug' => $license->slug,
+                'license_type' => $license->license_type,
+                'payment_type' => 'driver_license',
+                'revenue_head_code' => $option->revenue_head_code,
+                'payment_description' => $option->name . " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")",
+                'base_amount' => $baseAmount,
+                'license_year' => $licenseYear,
+                'total_amount' => $totalAmount,
+            ],
+        ];
+
+        // Add customer information
+        if ($user->name) {
+            $nameParts = explode(' ', trim($user->name));
+            $payload['first_name'] = $nameParts[0] ?? '';
+            $payload['last_name'] = isset($nameParts[1]) ? implode(' ', array_slice($nameParts, 1)) : '';
+        }
+
+        if ($user->phone_number) {
+            $payload['phone'] = $user->phone_number;
+        }
+
         try {
-            $response = Http::timeout(30)->post($baseUrl . '/payment/transactions/verify-transaction', [
-                'transaction_id' => $txn->transaction_id,
-                'private_key' => env('MONICREDIT_PRIVATE_KEY'),
-            ]);
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $secretKey,
+                'Content-Type' => 'application/json',
+            ])->timeout(30)->post('https://api.paystack.co/transaction/initialize', $payload);
+
             $data = $response->json();
+
+            if (!$response->successful() || !$data['status']) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment initialization failed. Please try again.',
+                    'error' => $data['message'] ?? 'Unknown error'
+                ], 500);
+            }
+
+            // Update payment record with Paystack response
+            $payment->update([
+                'raw_response' => $data,
+                'gateway_reference' => $data['data']['reference'] ?? null,
+                'gateway_authorization_url' => $data['data']['authorization_url'] ?? null,
+            ]);
+
+            // Update DriverLicenseTransaction with Paystack response
+            $txn->update([
+                'reference_code' => $data['data']['reference'] ?? null,
+                'raw_response' => $data,
+            ]);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Payment initialized successfully',
+                'data' => [
+                    'authorization_url' => $data['data']['authorization_url'],
+                    'access_code' => $data['data']['access_code'],
+                    'reference' => $data['data']['reference'],
+                    'transaction_id' => $transaction_id,
+                    'amount' => $totalAmount,
+                    'base_amount' => $baseAmount,
+                    'license_year' => $licenseYear,
+                    'payment_gateway' => 'paystack',
+                    'license' => [
+                        'slug' => $license->slug,
+                        'license_type' => $license->license_type,
+                        'full_name' => $license->full_name,
+                        'license_year' => $licenseYear,
+                    ]
+                ]
+            ]);
+
         } catch (\Exception $e) {
-            // Log::error('Monicredit verification API error in DriverLicenseController', [
-            //     'error' => $e->getMessage(),
-            //     'url' => $baseUrl . '/payment/transactions/verify-transaction',
-            //     'transaction_id' => $txn->transaction_id
-            // ]);
-            
+            \Log::error('Paystack driver license payment initialization failed', [
+                'error' => $e->getMessage(),
+                'license_slug' => $slug,
+                'user_id' => $user->id
+            ]);
+
             return response()->json([
                 'status' => false,
-                'message' => 'Payment verification connection error. Please try again later.',
+                'message' => 'Payment gateway connection error. Please try again later.',
                 'error' => $e->getMessage()
             ], 500);
         }
-        if (isset($data['status']) && $data['status'] == true) {
-            $txn->update([
-                'status' => strtolower($data['data']['status']),
-                'raw_response' => $data
-            ]);
-            if (strtolower($data['data']['status']) === 'approved' || strtolower($data['data']['status']) === 'success') {
-                $license->status = 'active';
-                $license->save();
-            }
-            return response()->json([
-                'message' => 'Payment verified successfully',
-                'data' => $data,
-                // 'license' => $license,
-                'payment' => $txn
-            ]);
-        }
-        return response()->json([
-            'message' => 'Payment not successful',
-            'data' => $data
-        ]);
     }
 
     public function show($slug)

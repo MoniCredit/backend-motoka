@@ -323,81 +323,79 @@ public function verifyPayment($transaction_id)
             (strtolower($data['data']['status'] ?? '') === 'approved' || 
              strtolower($data['data']['status'] ?? '') === 'success')) {
 
-            // If payment is successful and for a car, update car expiry and reminder
-            $car = \App\Models\Car::find($payment->car_id);
-            if ($car) {
-                $car->status = 'active';
-                $car->save();
+            // Handle different payment types
+            $metaData = $payment->meta_data ?? [];
+            $paymentType = $metaData['payment_type'] ?? 'car';
 
-                // Create order for admin processing
-                $this->createOrderFromPayment($payment, $car, $user);
-                
-                // Debug: Log order creation for Monicredit payments
-                \Log::info('Monicredit payment processed - Order creation attempted', [
-                    'payment_id' => $payment->id,
-                    'payment_gateway' => $payment->payment_gateway,
-                    'payment_status' => $payment->status,
-                    'car_id' => $car->id,
-                    'user_id' => $user->id,
-                    'order_count' => \App\Models\Order::where('payment_id', $payment->id)->count()
-                ]);
-
-                // Get the userId string from the user model
-                $userModel = \App\Models\User::find($payment->user_id);
-                $userIdString = $userModel ? $userModel->userId : null;
-
-                if ($userIdString) {
-                    // When payment is made, change status to "Processing"
-                    $message = 'Processing';
-                    \App\Models\Reminder::updateOrCreate(
-                        [
-                            'user_id' => $userIdString,
-                            'type' => 'car',
-                            'ref_id' => $car->id,
-                        ],
-                        [
-                            'message' => $message,
-                            'remind_at' => \Carbon\Carbon::now()->format('Y-m-d H:i:s'),
-                            'is_sent' => false
-                        ]
-                    );
-                }
-
-                // Create appropriate notification based on payment type
-                $this->createPaymentNotification($user->id, $payment, $car);
-                
-                // Debug: Log payment details for troubleshooting
-                \Log::info('Payment verification completed', [
-                    'payment_id' => $payment->id,
-                    'payment_schedule_id' => $payment->payment_schedule_id,
-                    'payment_description' => $payment->payment_description,
-                    'car_id' => $car->id,
-                    'user_id' => $user->id
-                ]);
+            if ($paymentType === 'driver_license') {
+                // Handle driver license payment
+                $this->handleDriverLicensePaymentSuccess($payment, $user, $metaData);
             } else {
-                // If no car found, still create a payment notification
-                $this->createPaymentNotification($user->id, $payment, null);
+                // Handle car payment (existing logic)
+                $car = \App\Models\Car::find($payment->car_id);
+                if ($car) {
+                    $car->status = 'active';
+                    $car->save();
+
+                    // Create order for admin processing
+                    $this->createOrderFromPayment($payment, $car, $user);
+                    
+                    // Debug: Log order creation for Monicredit payments
+                    \Log::info('Monicredit payment processed - Order creation attempted', [
+                        'payment_id' => $payment->id,
+                        'payment_gateway' => $payment->payment_gateway,
+                        'payment_status' => $payment->status,
+                        'car_id' => $car->id,
+                        'user_id' => $user->id,
+                        'order_count' => \App\Models\Order::where('payment_id', $payment->id)->count()
+                    ]);
+
+                    // Get the userId string from the user model
+                    $userModel = \App\Models\User::find($payment->user_id);
+                    $userIdString = $userModel ? $userModel->userId : null;
+
+                    if ($userIdString) {
+                        // When payment is made, change status to "Processing"
+                        $message = 'Processing';
+                        \App\Models\Reminder::updateOrCreate(
+                            [
+                                'user_id' => $userIdString,
+                                'type' => 'car',
+                                'ref_id' => $car->id,
+                            ],
+                            [
+                                'message' => $message,
+                                'remind_at' => \Carbon\Carbon::now()->format('Y-m-d H:i:s'),
+                                'is_sent' => false
+                            ]
+                        );
+                    }
+
+                    // Create appropriate notification based on payment type
+                    $this->createPaymentNotification($user->id, $payment, $car);
+                }
             }
 
             return response()->json([
+                'status' => true,
                 'message' => 'Payment verified successfully',
                 'data' => $data,
                 'payment_date' => $payment->created_at,
-                'car' => $car,
                 'payment' => $this->formatPayment($payment)
             ]);
         }
 
-    // Payment not successful or still pending - create notification
-    NotificationService::notifyPaymentOperation($user->id, 'failed', $payment);
-    
-    return response()->json([
-        'message' => 'Payment not successful',
-        'data' => $data
-    ]);
-}
+        // Payment not successful or still pending - create notification
+        NotificationService::notifyPaymentOperation($user->id, 'failed', $payment);
+        
+        return response()->json([
+            'status' => false,
+            'message' => 'Payment not successful',
+            'data' => $data
+        ]);
+    }
 
-public function getWalletInfo(Request $request)
+    public function getWalletInfo(Request $request)
 {
     $user = Auth::user();
     $privateKey = env('MONICREDIT_PRIVATE_KEY');
@@ -751,6 +749,79 @@ private function createOrderFromPayment($payment, $car, $user)
 
     } catch (\Exception $e) {
         Log::error('Failed to create order from payment', [
+            'payment_id' => $payment->id,
+            'error' => $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * Handle successful driver license payment
+ */
+    private function handleDriverLicensePaymentSuccess($payment, $user, $metaData)
+    {
+        try {
+            $driverLicenseId = $metaData['driver_license_id'] ?? null;
+            
+            if (!$driverLicenseId) {
+                \Log::error('Driver license ID not found in payment metadata', [
+                    'payment_id' => $payment->id,
+                    'meta_data' => $metaData
+                ]);
+                return;
+            }
+
+            // Security: Validate payment amount against license_year calculation
+            $licenseYear = $metaData['license_year'] ?? null;
+            $baseAmount = $metaData['base_amount'] ?? null;
+            $expectedAmount = $baseAmount * $licenseYear;
+            
+            if ($payment->amount !== $expectedAmount) {
+                \Log::error('Payment amount tampering detected', [
+                    'payment_id' => $payment->id,
+                    'expected_amount' => $expectedAmount,
+                    'actual_amount' => $payment->amount,
+                    'base_amount' => $baseAmount,
+                    'license_year' => $licenseYear
+                ]);
+                
+                // Mark payment as suspicious but still process
+                $payment->update(['status' => 'suspicious']);
+                return;
+            }
+
+        // Update driver license status
+        $driverLicense = \App\Models\DriverLicense::find($driverLicenseId);
+        if ($driverLicense) {
+            $driverLicense->status = 'active';
+            $driverLicense->save();
+
+            // Update the corresponding DriverLicenseTransaction
+            $driverLicenseTransaction = \App\Models\DriverLicenseTransaction::where('transaction_id', $payment->transaction_id)->first();
+            if ($driverLicenseTransaction) {
+                $driverLicenseTransaction->update([
+                    'status' => 'approved',
+                    'raw_response' => $payment->raw_response
+                ]);
+            }
+
+            // Create notification for driver license payment completion
+            \App\Services\NotificationService::notifyDriverLicenseOperation($user->userId, 'payment_completed', $driverLicense);
+
+            \Log::info('Driver license payment processed successfully', [
+                'payment_id' => $payment->id,
+                'driver_license_id' => $driverLicenseId,
+                'license_slug' => $driverLicense->slug,
+                'user_id' => $user->id
+            ]);
+        } else {
+            \Log::error('Driver license not found for payment', [
+                'payment_id' => $payment->id,
+                'driver_license_id' => $driverLicenseId
+            ]);
+        }
+    } catch (\Exception $e) {
+        \Log::error('Failed to handle driver license payment success', [
             'payment_id' => $payment->id,
             'error' => $e->getMessage()
         ]);
