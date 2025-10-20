@@ -68,6 +68,11 @@ class Payment extends Model
         return $this->belongsTo(Car::class, 'car_id');
     }
 
+    public function driverLicense()
+    {
+        return $this->belongsTo(DriverLicense::class, 'driver_license_id');
+    }
+
     public function paymentSchedule()
     {
         // Handle both single and bulk payments

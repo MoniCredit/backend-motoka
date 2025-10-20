@@ -277,6 +277,7 @@ class DriverLicenseController extends Controller
             'gateway_reference' => $data['id'] ?? null,
             'amount' => $totalAmount, // Use calculated total amount
             'user_id' => $user->id,
+            'driver_license_id' => $license->id, // Add driver license ID for relationship
             'payment_gateway' => 'monicredit',
             'status' => 'pending',
             'payment_description' => $option->name . " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")",
@@ -384,6 +385,7 @@ class DriverLicenseController extends Controller
             'transaction_id' => $transaction_id,
             'amount' => $totalAmount, // Use calculated total amount
             'user_id' => $user->id,
+            'driver_license_id' => $license->id, // Add driver license ID for relationship
             'payment_gateway' => 'paystack',
             'status' => 'pending',
             'payment_description' => $option->name . " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")",

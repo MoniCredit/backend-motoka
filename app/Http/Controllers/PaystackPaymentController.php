@@ -1066,6 +1066,9 @@ class PaystackPaymentController extends Controller
                     ]);
                 }
 
+                // Create order for admin processing
+                $this->createDriverLicenseOrderFromPayment($payment, $driverLicense, $user);
+
                 // Create notification for driver license payment completion
                 \App\Services\NotificationService::notifyDriverLicenseOperation($user->userId, 'payment_completed', $driverLicense);
 
@@ -1088,6 +1091,68 @@ class PaystackPaymentController extends Controller
         } catch (\Exception $e) {
             \Log::error('Failed to handle driver license payment success via Paystack', [
                 'payment_id' => $payment->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Create order for driver license payment
+     */
+    private function createDriverLicenseOrderFromPayment($payment, $driverLicense, $user)
+    {
+        try {
+            // Check if order already exists for this payment to prevent duplicates
+            $existingOrder = \App\Models\Order::where('payment_id', $payment->id)->first();
+            if ($existingOrder) {
+                \Log::info('Order already exists for driver license payment', [
+                    'payment_id' => $payment->id,
+                    'order_id' => $existingOrder->id
+                ]);
+                return;
+            }
+
+            // Get metadata for order details
+            $metaData = $payment->meta_data ?? [];
+            $licenseYear = $metaData['license_year'] ?? 1;
+            $licenseType = $metaData['license_type'] ?? 'new';
+
+            // Determine order type based on license type
+            $orderType = $licenseType === 'new' ? 'driver_license_new' : 'driver_license_renewal';
+
+            // Get delivery information from driver license
+            $deliveryAddress = $driverLicense->address ?? $user->address ?? 'Address not provided';
+            $deliveryContact = $driverLicense->phone_number ?? $user->phone_number ?? 'Contact not provided';
+
+            // Create order
+            $order = \App\Models\Order::create([
+                'slug' => \Illuminate\Support\Str::uuid(),
+                'user_id' => $user->id,
+                'car_id' => null, // Driver license orders don't have car_id
+                'driver_license_id' => $driverLicense->id,
+                'payment_id' => $payment->id,
+                'order_type' => $orderType,
+                'status' => 'pending',
+                'amount' => $payment->amount,
+                'delivery_address' => $deliveryAddress,
+                'delivery_contact' => $deliveryContact,
+                'state' => $driverLicense->state_of_origin ?? null,
+                'lga' => $driverLicense->local_government ?? null,
+                'notes' => "Driver License Payment via {$payment->payment_gateway} - {$licenseType} license for {$licenseYear} year" . ($licenseYear > 1 ? 's' : ''),
+            ]);
+            
+            \Log::info('Driver license order created successfully', [
+                'order_id' => $order->id,
+                'payment_id' => $payment->id,
+                'driver_license_id' => $driverLicense->id,
+                'order_type' => $orderType,
+                'amount' => $payment->amount
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to create driver license order from payment', [
+                'payment_id' => $payment->id,
+                'driver_license_id' => $driverLicense->id,
                 'error' => $e->getMessage()
             ]);
         }
