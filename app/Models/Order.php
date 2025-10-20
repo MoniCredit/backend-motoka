@@ -16,6 +16,7 @@ class Order extends Model
         'slug',
         'user_id',
         'car_id',
+        'driver_license_id',
         'payment_id',
         'agent_id',
         'order_type',
@@ -56,6 +57,11 @@ class Order extends Model
     public function car(): BelongsTo
     {
         return $this->belongsTo(Car::class);
+    }
+
+    public function driverLicense(): BelongsTo
+    {
+        return $this->belongsTo(DriverLicense::class);
     }
 
     public function payment(): BelongsTo

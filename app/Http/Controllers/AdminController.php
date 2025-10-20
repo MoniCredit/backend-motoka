@@ -214,7 +214,7 @@ class AdminController extends Controller
             'declined' => 'declined'
         ];
 
-        $query = Order::with(['user', 'car', 'payment', 'agent'])
+        $query = Order::with(['user', 'car', 'driverLicense', 'payment', 'agent'])
             ->leftJoin('states', 'orders.state', '=', 'states.id')
             ->leftJoin('lgas', 'orders.lga', '=', 'lgas.id')
             ->select('orders.*', 'states.state_name as state_name', 'lgas.lga_name as lga_name')
@@ -225,6 +225,28 @@ class AdminController extends Controller
         }
 
         $orders = $query->paginate($perPage);
+
+        // Enhance orders data with driver license information
+        $orders->getCollection()->transform(function ($order) {
+            $orderData = $order->toArray();
+            
+            // Add driver license summary for list view
+            if ($order->driver_license_id && $order->driverLicense) {
+                $paymentMetaData = $order->payment->meta_data ?? [];
+                
+                $orderData['driver_license_summary'] = [
+                    'license_type' => $order->driverLicense->license_type,
+                    'license_year' => $order->driverLicense->license_year,
+                    'full_name' => $order->driverLicense->full_name,
+                    'phone_number' => $order->driverLicense->phone_number,
+                    'base_amount' => $paymentMetaData['base_amount'] ?? null,
+                    'total_amount' => $paymentMetaData['total_amount'] ?? null,
+                    'calculation' => ($paymentMetaData['base_amount'] ?? 0) . ' × ' . ($paymentMetaData['license_year'] ?? 0) . ' = ' . ($paymentMetaData['total_amount'] ?? 0)
+                ];
+            }
+            
+            return $orderData;
+        });
 
         return response()->json([
             'status' => true,
@@ -246,7 +268,7 @@ class AdminController extends Controller
             ], 403);
         }
 
-        $order = Order::with(['user', 'car', 'payment', 'agent'])
+        $order = Order::with(['user', 'car', 'driverLicense', 'payment', 'agent'])
             ->leftJoin('states', 'orders.state', '=', 'states.id')
             ->leftJoin('lgas', 'orders.lga', '=', 'lgas.id')
             ->select('orders.*', 'states.state_name as state_name', 'lgas.lga_name as lga_name')
@@ -260,9 +282,54 @@ class AdminController extends Controller
             ], 404);
         }
 
+        // Enhance order data with driver license specific information
+        $orderData = $order->toArray();
+        
+        // Add driver license specific details if this is a driver license order
+        if ($order->driver_license_id && $order->driverLicense) {
+            $driverLicense = $order->driverLicense;
+            $paymentMetaData = $order->payment->meta_data ?? [];
+            
+            $orderData['driver_license_details'] = [
+                'license_type' => $driverLicense->license_type,
+                'license_year' => $driverLicense->license_year,
+                'full_name' => $driverLicense->full_name,
+                'phone_number' => $driverLicense->phone_number,
+                'address' => $driverLicense->address,
+                'date_of_birth' => $driverLicense->date_of_birth,
+                'place_of_birth' => $driverLicense->place_of_birth,
+                'state_of_origin' => $driverLicense->state_of_origin,
+                'local_government' => $driverLicense->local_government,
+                'blood_group' => $driverLicense->blood_group,
+                'height' => $driverLicense->height,
+                'occupation' => $driverLicense->occupation,
+                'next_of_kin' => $driverLicense->next_of_kin,
+                'next_of_kin_phone' => $driverLicense->next_of_kin_phone,
+                'mother_maiden_name' => $driverLicense->mother_maiden_name,
+                'passport_photograph' => $driverLicense->passport_photograph,
+                'license_number' => $driverLicense->license_number,
+                'status' => $driverLicense->status,
+            ];
+            
+            // Add payment calculation details
+            $orderData['payment_calculation'] = [
+                'base_amount' => $paymentMetaData['base_amount'] ?? null,
+                'license_year' => $paymentMetaData['license_year'] ?? null,
+                'total_amount' => $paymentMetaData['total_amount'] ?? null,
+                'calculation_formula' => 'Base Amount × License Years = Total Amount',
+                'calculation_breakdown' => ($paymentMetaData['base_amount'] ?? 0) . ' × ' . ($paymentMetaData['license_year'] ?? 0) . ' = ' . ($paymentMetaData['total_amount'] ?? 0)
+            ];
+            
+            // Add revenue head information
+            $orderData['revenue_head'] = [
+                'code' => $paymentMetaData['revenue_head_code'] ?? null,
+                'description' => $order->payment->payment_description ?? null
+            ];
+        }
+
         return response()->json([
             'status' => true,
-            'data' => $order
+            'data' => $orderData
         ]);
     }
 
@@ -1157,13 +1224,35 @@ class AdminController extends Controller
     public function getRecentOrders()
     {
         try {
-            $recentOrders = Order::with(['user', 'car', 'payment'])
+            $recentOrders = Order::with(['user', 'car', 'driverLicense', 'payment'])
                 ->leftJoin('states', 'orders.state', '=', 'states.id')
                 ->leftJoin('lgas', 'orders.lga', '=', 'lgas.id')
                 ->select('orders.*', 'states.state_name as state_name', 'lgas.lga_name as lga_name')
                 ->orderBy('orders.created_at', 'desc')
                 ->limit(5)
                 ->get();
+
+            // Enhance recent orders with driver license information
+            $recentOrders->transform(function ($order) {
+                $orderData = $order->toArray();
+                
+                // Add driver license summary for recent orders
+                if ($order->driver_license_id && $order->driverLicense) {
+                    $paymentMetaData = $order->payment->meta_data ?? [];
+                    
+                    $orderData['driver_license_summary'] = [
+                        'license_type' => $order->driverLicense->license_type,
+                        'license_year' => $order->driverLicense->license_year,
+                        'full_name' => $order->driverLicense->full_name,
+                        'phone_number' => $order->driverLicense->phone_number,
+                        'base_amount' => $paymentMetaData['base_amount'] ?? null,
+                        'total_amount' => $paymentMetaData['total_amount'] ?? null,
+                        'calculation' => ($paymentMetaData['base_amount'] ?? 0) . ' × ' . ($paymentMetaData['license_year'] ?? 0) . ' = ' . ($paymentMetaData['total_amount'] ?? 0)
+                    ];
+                }
+                
+                return $orderData;
+            });
 
             return response()->json([
                 'status' => true,
@@ -1184,7 +1273,7 @@ class AdminController extends Controller
     public function getRecentTransactions()
     {
         try {
-            $recentTransactions = \App\Models\Payment::with(['car'])
+            $recentTransactions = \App\Models\Payment::with(['car', 'driverLicense'])
                 ->whereIn('status', ['completed', 'approved'])
                 ->orderBy('created_at', 'desc')
                 ->limit(5)
@@ -1229,7 +1318,7 @@ class AdminController extends Controller
             'failed' => 'declined'
         ];
 
-        $query = Payment::with(['user', 'car'])
+        $query = Payment::with(['user', 'car', 'driverLicense'])
             ->orderBy('created_at', 'desc');
 
         if ($status !== 'all' && isset($statusMap[$status])) {
