@@ -379,8 +379,11 @@ public function verifyPayment($transaction_id)
             return response()->json([
                 'status' => true,
                 'message' => 'Payment verified successfully',
-                'data' => $data,
-                'payment_date' => $payment->created_at,
+                'data' => [
+                    'transaction_id' => $data['data']['transaction_id'] ?? null,
+                    'status' => $data['data']['status'] ?? null,
+                    'amount' => $data['data']['amount'] ?? null,
+                ],
                 'payment' => $this->formatPayment($payment)
             ]);
         }
@@ -542,10 +545,10 @@ public function getAllReceipts(Request $request)
                 'payment_date' => $payment->created_at,
             ],
             'payment_schedule' => [
-                'id' => $payment->paymentSchedule->id ?? null,
-                'amount' => $payment->paymentSchedule->amount ?? null,
-                'payment_head' => $payment->paymentSchedule->payment_head->payment_head_name ?? null,
-                'revenue_head' => $payment->paymentSchedule->revenue_head->revenue_head_name ?? null,
+                'id' => $payment->paymentSchedule?->id ?? null,
+                'amount' => $payment->paymentSchedule?->amount ?? null,
+                'payment_head' => $payment->paymentSchedule?->payment_head?->payment_head_name ?? null,
+                'revenue_head' => $payment->paymentSchedule?->revenue_head?->revenue_head_name ?? null,
             ],
             'raw_response' => [
                 'status' => $payment->raw_response['status'] ?? null,
@@ -987,7 +990,21 @@ private function createPaymentNotification($userId, $payment, $car)
     // Get payment schedule to determine the type of payment
     try {
         // Load the payment schedule with its payment head
-        $paymentSchedule = PaymentSchedule::with('payment_head')->find($payment->payment_schedule_id);
+        $paymentScheduleId = $payment->payment_schedule_id;
+        
+       
+        if (is_array($paymentScheduleId)) {
+            if (count($paymentScheduleId) === 0) {
+              
+                $paymentSchedule = null;
+            } else {
+                // For bulk payments, use the first schedule
+                $paymentSchedule = PaymentSchedule::with('payment_head')->find($paymentScheduleId[0]);
+            }
+        } else {
+            // Single payment schedule
+            $paymentSchedule = PaymentSchedule::with('payment_head')->find($paymentScheduleId);
+        }
         
         if ($paymentSchedule && $paymentSchedule->payment_head) {
             $paymentHeadName = strtolower($paymentSchedule->payment_head->payment_head_name);
@@ -1030,20 +1047,11 @@ private function createPaymentNotification($userId, $payment, $car)
 private function formatPayment(Payment $payment)
 {
     return [
-        // 'id' omitted (UUID). Use slug + pagination where needed
-        'slug' => $payment->slug,
         'transaction_id' => $payment->transaction_id,
         'amount' => $payment->amount,
-        'payment_schedule_id' => $payment->payment_schedule_id,
-        'car_id' => $payment->car_id,
         'status' => $payment->status,
-        'reference_code' => $payment->reference_code,
-        'payment_description' => $payment->payment_description,
-        'user_id' => $payment->user_id,
-        'raw_response' => $payment->raw_response,
-        'meta_data' => $payment->meta_data,
+        'payment_gateway' => $payment->payment_gateway,
         'created_at' => $payment->created_at,
-        'updated_at' => $payment->updated_at,
     ];
 }
 

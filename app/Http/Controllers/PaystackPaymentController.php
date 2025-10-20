@@ -395,8 +395,14 @@ class PaystackPaymentController extends Controller
                 return response()->json([
                     'status' => true,
                     'message' => 'Payment verified successfully',
-                    'data' => $data,
-                    'payment_date' => $payment->created_at,
+                    'data' => [
+                        'reference' => $data['data']['reference'] ?? null,
+                        'amount' => $data['data']['amount'] ?? null,
+                        'status' => $data['data']['status'] ?? null,
+                        'paid_at' => $data['data']['paid_at'] ?? null,
+                        'channel' => $data['data']['channel'] ?? null,
+                        'currency' => $data['data']['currency'] ?? null,
+                    ],
                     'payment' => $this->formatPayment($payment)
                 ]);
             }
@@ -407,7 +413,10 @@ class PaystackPaymentController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'Payment not successful',
-                'data' => $data
+                'data' => [
+                    'reference' => $data['data']['reference'] ?? null,
+                    'status' => $data['data']['status'] ?? null,
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -922,7 +931,21 @@ class PaystackPaymentController extends Controller
         // Get payment schedule to determine the type of payment
         try {
             // Load the payment schedule with its payment head
-            $paymentSchedule = PaymentSchedule::with('payment_head')->find($payment->payment_schedule_id);
+            $paymentScheduleId = $payment->payment_schedule_id;
+            
+            // Handle array payment_schedule_id (for bulk payments or empty arrays)
+            if (is_array($paymentScheduleId)) {
+                if (count($paymentScheduleId) === 0) {
+                    // For driver license payments with empty array, skip payment schedule lookup
+                    $paymentSchedule = null;
+                } else {
+                    // For bulk payments, use the first schedule
+                    $paymentSchedule = PaymentSchedule::with('payment_head')->find($paymentScheduleId[0]);
+                }
+            } else {
+                // Single payment schedule
+                $paymentSchedule = PaymentSchedule::with('payment_head')->find($paymentScheduleId);
+            }
             
             if ($paymentSchedule && $paymentSchedule->payment_head) {
                 $paymentHeadName = strtolower($paymentSchedule->payment_head->payment_head_name);
@@ -979,12 +1002,9 @@ class PaystackPaymentController extends Controller
             }
 
             // Security: Validate payment amount against license_year calculation
-           
             $licenseYear = $metaData['license_year'] ?? null;
             $baseAmount = $metaData['base_amount'] ?? null;
             $expectedAmount = $baseAmount * $licenseYear;
-            
-            // Security: Validate payment amount against license_year calculation
             
             if ($payment->amount !== $expectedAmount) {
                 \Log::error('Payment amount tampering detected in Paystack payment', [
@@ -1045,15 +1065,11 @@ class PaystackPaymentController extends Controller
     private function formatPayment($payment)
     {
         return [
-            'id' => $payment->id,
-            'slug' => $payment->slug,
+            'transaction_id' => $payment->transaction_id,
             'amount' => $payment->amount,
             'status' => $payment->status,
             'payment_gateway' => $payment->payment_gateway,
-            'transaction_id' => $payment->transaction_id,
             'created_at' => $payment->created_at,
-            'payment_schedule' => $payment->paymentSchedule,
-            'car' => $payment->car,
         ];
     }
 }
