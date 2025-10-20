@@ -775,11 +775,11 @@ private function createOrderFromPayment($payment, $car, $user)
             }
 
             // Security: Validate payment amount against license_year calculation
-            $licenseYear = $metaData['license_year'] ?? null;
-            $baseAmount = $metaData['base_amount'] ?? null;
+            $licenseYear = (float) ($metaData['license_year'] ?? 0);
+            $baseAmount = (float) ($metaData['base_amount'] ?? 0);
             $expectedAmount = $baseAmount * $licenseYear;
             
-            if ($payment->amount !== $expectedAmount) {
+            if ((float) $payment->amount != $expectedAmount) {
                 \Log::error('Payment amount tampering detected', [
                     'payment_id' => $payment->id,
                     'expected_amount' => $expectedAmount,

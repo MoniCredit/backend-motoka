@@ -186,15 +186,15 @@ class DriverLicenseController extends Controller
             ], 400);
         }
 
-        // Security: Check for existing pending payments for this license
-        $existingPayment = \App\Models\Payment::where('meta_data->driver_license_id', $license->id)
-            ->whereIn('status', ['pending', 'completed'])
+        // Security: Check for existing completed payments for this license
+        $existingCompletedPayment = \App\Models\Payment::where('meta_data->driver_license_id', $license->id)
+            ->where('status', 'completed')
             ->first();
             
-        if ($existingPayment) {
+        if ($existingCompletedPayment) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'A payment is already in progress or completed for this license.'
+                'message' => 'This license has already been paid for and is active.'
             ], 400);
         }
 
@@ -351,15 +351,15 @@ class DriverLicenseController extends Controller
             ], 400);
         }
 
-        // Security: Check for existing pending payments for this license
-        $existingPayment = \App\Models\Payment::where('meta_data->driver_license_id', $license->id)
-            ->whereIn('status', ['pending', 'completed'])
+        // Security: Check for existing completed payments for this license
+        $existingCompletedPayment = \App\Models\Payment::where('meta_data->driver_license_id', $license->id)
+            ->where('status', 'completed')
             ->first();
             
-        if ($existingPayment) {
+        if ($existingCompletedPayment) {
             return response()->json([
                 'status' => false,
-                'message' => 'A payment is already in progress or completed for this license.'
+                'message' => 'This license has already been paid for and is active.'
             ], 400);
         }
 
