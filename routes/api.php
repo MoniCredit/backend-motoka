@@ -151,7 +151,8 @@ Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOTP']);
         Route::post('/driver-license', [\App\Http\Controllers\DriverLicenseController::class, 'store']);
         Route::get('/driver-license', [\App\Http\Controllers\DriverLicenseController::class, 'index']);
         Route::post('/driver-license/{slug}/initialize-payment', [\App\Http\Controllers\DriverLicenseController::class, 'initializePaymentForLicense']);
-        Route::post('/driver-license/{slug}/verify-payment', [\App\Http\Controllers\DriverLicenseController::class, 'verifyPaymentForLicense']);
+        Route::post('/driver-license/{slug}/initialize-paystack-payment', [\App\Http\Controllers\DriverLicenseController::class, 'initializePaystackPaymentForLicense']);
+        // Note: Driver license verification now uses the unified payment verification endpoint: /api/payment/verify-payment/{transaction_id}
         Route::get('/driver-license/{slug}/receipt', [\App\Http\Controllers\DriverLicenseController::class, 'getDriverLicenseReceipt']);
         Route::put('/driver-license/{slug}', [\App\Http\Controllers\DriverLicenseController::class, 'update']);
         Route::delete('/driver-license/{slug}', [\App\Http\Controllers\DriverLicenseController::class, 'destroy']);
