@@ -1185,7 +1185,7 @@ class AdminController extends Controller
     {
         try {
             $recentTransactions = \App\Models\Payment::with(['car'])
-                ->where('status', 'completed')
+                ->whereIn('status', ['completed', 'approved'])
                 ->orderBy('created_at', 'desc')
                 ->limit(5)
                 ->get();
@@ -1251,9 +1251,9 @@ class AdminController extends Controller
 
         // Calculate summary statistics based on payments
         $summary = [
-            'total_amount' => Payment::where('status', 'approved')->sum('amount'),
+            'total_amount' => Payment::whereIn('status', ['approved', 'completed'])->sum('amount'),
             'total_transactions' => Payment::count(),
-            'successful_transactions' => Payment::where('status', 'approved')->count(),
+            'successful_transactions' => Payment::whereIn('status', ['approved', 'completed'])->count(),
             'failed_transactions' => Payment::where('status', 'declined')->count(),
             'pending_transactions' => Payment::where('status', 'pending')->count(),
         ];

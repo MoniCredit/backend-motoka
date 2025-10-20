@@ -73,9 +73,12 @@ class Payment extends Model
         // Handle both single and bulk payments
         if (is_array($this->payment_schedule_id) && count($this->payment_schedule_id) === 1) {
             return $this->belongsTo(PaymentSchedule::class, 'payment_schedule_id')->whereIn('id', $this->payment_schedule_id);
-        } elseif (is_array($this->payment_schedule_id)) {
+        } elseif (is_array($this->payment_schedule_id) && count($this->payment_schedule_id) > 1) {
             // For bulk payments, return the first schedule as primary
             return $this->belongsTo(PaymentSchedule::class, 'payment_schedule_id')->where('id', $this->payment_schedule_id[0]);
+        } elseif (is_array($this->payment_schedule_id) && count($this->payment_schedule_id) === 0) {
+            // For payments without schedules (like driver license payments), return a relationship that will be null
+            return $this->belongsTo(PaymentSchedule::class, 'payment_schedule_id')->where('id', -1);
         } else {
             // Single payment
             return $this->belongsTo(PaymentSchedule::class, 'payment_schedule_id');
@@ -85,8 +88,11 @@ class Payment extends Model
     public function paymentSchedules()
     {
         // Return all payment schedules for bulk payments
-        if (is_array($this->payment_schedule_id)) {
+        if (is_array($this->payment_schedule_id) && count($this->payment_schedule_id) > 0) {
             return $this->hasMany(PaymentSchedule::class, 'id')->whereIn('id', $this->payment_schedule_id);
+        } elseif (is_array($this->payment_schedule_id) && count($this->payment_schedule_id) === 0) {
+            // For payments without schedules (like driver license payments), return empty collection
+            return $this->hasMany(PaymentSchedule::class, 'id')->where('id', -1); // This will return empty collection
         } else {
             // Single payment - return as collection
             return $this->hasMany(PaymentSchedule::class, 'id')->where('id', $this->payment_schedule_id);
