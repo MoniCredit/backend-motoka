@@ -6,11 +6,17 @@ use Illuminate\Database\Seeder;
 use App\Models\State;
 use App\Models\Lga;
 use App\Models\DeliveryFee;
+use Illuminate\Support\Facades\DB;
 
 class DeliveryFeeSeeder extends Seeder
 {
     public function run()
     {
+        // Truncate the table to avoid mismatched IDs
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        \App\Models\DeliveryFee::truncate();
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
         // Map of state_name => fee
         $stateFees = [
             'Anambra' => 70,
@@ -39,7 +45,7 @@ class DeliveryFeeSeeder extends Seeder
             'Lagos' => 5000,
             'Nasarawa' => 325,
             'Niger' => 335,
-            'Ogun' => 2000,
+            'Ogun' => 2000, // ✅ Correct Ogun fee
             'Ondo' => 5000,
             'Osun' => 5000,
             'Oyo' => 5000,
@@ -49,20 +55,27 @@ class DeliveryFeeSeeder extends Seeder
             'Taraba' => 5000,
             'Yobe' => 5000,
             'Zamfara' => 5000,
-            'F.C.T' => 500,
+            'FCT' => 500, // ✅ ensure name matches your state_name exactly
         ];
+
         $states = State::all();
+
         foreach ($states as $state) {
-            $lgas = Lga::where('state_id', $state->id)->get();
             $fee = $stateFees[$state->state_name] ?? 200;
+
+            $lgas = Lga::where('state_id', $state->id)->get();
+
             foreach ($lgas as $lga) {
-                DeliveryFee::updateOrCreate([
-                    'state_id' => $state->id,
-                    'lga_id' => $lga->id,
-                ], [
-                    'fee' => $fee,
-                ]);
+                \App\Models\DeliveryFee::updateOrCreate(
+                    [
+                        'state_id' => $state->id,
+                        'lga_id' => $lga->id,
+                    ],
+                    [
+                        'fee' => $fee,
+                    ]
+                );
             }
         }
     }
-} 
+}
