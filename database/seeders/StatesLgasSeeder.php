@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use App\Models\State;
 use App\Models\Lga;
+use Illuminate\Support\Facades\DB;
 
 class StatesLgasSeeder extends Seeder
 {
@@ -13,6 +14,16 @@ class StatesLgasSeeder extends Seeder
      */
     public function run(): void
     {
+        // 🔹 Temporarily disable foreign key checks
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+
+        // 🔹 Truncate both tables
+        Lga::truncate();
+        State::truncate();
+
+        // 🔹 Re-enable foreign key checks
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
         $states = [
             ['state_name' => 'Lagos', 'status' => 'active'],
             ['state_name' => 'Abia', 'status' => 'active'],
@@ -56,7 +67,6 @@ class StatesLgasSeeder extends Seeder
         foreach ($states as $stateData) {
             $state = State::create($stateData);
             
-            // Add some LGAs for each state (sample data)
             $lgas = $this->getLgasForState($stateData['state_name']);
             foreach ($lgas as $lgaName) {
                 Lga::create([

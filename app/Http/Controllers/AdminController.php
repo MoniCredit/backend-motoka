@@ -8,6 +8,8 @@ use App\Models\Car;
 use App\Models\Agent;
 use App\Models\Order;
 use App\Models\AgentPayment;
+use App\Models\Reminder;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -604,16 +606,48 @@ class AdminController extends Controller
             ], 403);
         }
 
-        $perPage = $request->get('per_page', 15);
 
-        $cars = Car::with('user')
-            ->orderBy('created_at', 'desc')
-            ->paginate($perPage);
+
+        $perPage = $request->input('per_page', 15);
+        $status = $request->input('status', 'all');
+        $search = $request->input('search', '');
+
+        $query = Car::with(['user:id,userId,name,email'])
+            ->orderBy('created_at', 'desc');
+
+       
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        
+        if (!empty($search)) {
+            $query->where(function($q) use ($search) {
+                $q->where('vehicle_make', 'like', "%{$search}%")
+                  ->orWhere('vehicle_model', 'like', "%{$search}%")
+                  ->orWhere('registration_no', 'like', "%{$search}%")
+                  ->orWhere('name_of_owner', 'like', "%{$search}%");
+            });
+        }
+
+        $cars = $query->paginate($perPage);
 
         return response()->json([
             'status' => true,
+            'message' => 'Cars retrieved successfully',
             'data' => $cars
         ]);
+
+        // $perPage = $request->get('per_page', 15);
+
+        // $cars = Car::with('user')
+        //     ->orderBy('created_at', 'desc')
+        //     ->paginate($perPage);
+
+        // return response()->json([
+        //     'status' => true,
+        //     'data' => $cars
+        // ]);
     }
 
     /**
@@ -630,7 +664,20 @@ class AdminController extends Controller
             ], 403);
         }
 
-        $car = Car::with('user')->where('slug', $slug)->first();
+
+
+        $car = Car::where('slug', $slug)
+            ->with([
+                'user:id,userId,name,email,phone',
+                'orders.orderDocuments' => function($query) {
+                    $query->where('status', 'approved');
+                },
+                'orders.agent:id,uuid,first_name,last_name,email,phone',
+                'orders.stateInfo:id,state_name',
+                'orders.lgaInfo:id,lga_name,state_id',
+                'orders.processedBy:id,userId,name,email'
+            ])
+            ->first();
 
         if (!$car) {
             return response()->json([
@@ -641,9 +688,96 @@ class AdminController extends Controller
 
         return response()->json([
             'status' => true,
+            'message' => 'Car retrieved successfully',
             'data' => $car
         ]);
+
+
+
+
+
+        // $car = Car::with('user')->where('slug', $slug)->first();
+
+        // if (!$car) {
+        //     return response()->json([
+        //         'status' => false,
+        //         'message' => 'Car not found'
+        //     ], 404);
+        // }
+
+        // return response()->json([
+        //     'status' => true,
+        //     'data' => $car
+        // ]);
     }
+
+
+
+    /**
+     * Delete a car (Admin only)
+     */
+    public function deleteCar($slug)
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+
+        $car = Car::where('slug', $slug)->first();
+
+        if (!$car) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Car not found'
+            ], 404);
+        }
+
+        // Store car info before deletion
+        $carInfo = $car->toArray();
+        $userId = $car->user_id;
+
+        // Delete associated document images
+        if (!empty($car->document_images)) {
+            foreach ($car->document_images as $path) {
+                if (file_exists(public_path($path))) {
+                    unlink(public_path($path));
+                }
+            }
+        }
+
+        // Delete plate-related documents
+        $plateDocuments = ['cac_document', 'letterhead', 'means_of_identification'];
+        foreach ($plateDocuments as $docField) {
+            if (!empty($car->$docField) && file_exists(public_path($car->$docField))) {
+                unlink(public_path($car->$docField));
+            }
+        }
+
+        // Delete associated reminders
+        Reminder::where('user_id', $userId)
+            ->where('ref_id', $car->id)
+            ->where('type', 'car')
+            ->delete();
+
+        // Delete the car
+        $car->delete();
+
+        // Send notification to user
+        NotificationService::notifyCarOperation($userId, 'deleted', (object)$carInfo);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Car and associated data deleted successfully'
+        ]);
+    }
+
+
+
 
     /**
      * Notify agent about new order
