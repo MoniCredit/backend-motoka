@@ -342,6 +342,7 @@ Route::middleware(['cors', 'auth:sanctum', 'admin'])->prefix('admin')->group(fun
     // Cars
     Route::get('/cars', [AdminController::class, 'getCars']);
     Route::get('/cars/{slug}', [AdminController::class, 'getCar']);
+    Route::delete('/cars/{slug}', [AdminController::class, 'deleteCar']);
     
     // States
     Route::get('/states', [AdminController::class, 'getStates']);
