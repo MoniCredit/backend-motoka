@@ -36,7 +36,6 @@ class AdminUserSeeder extends Seeder
                 'name' => $this->generateAdminName($email),
                 'email' => $email,
                 'email_verified_at' => now(),
-                'password' => Hash::make('admin123'), // Default password for admin
                 'phone_number' => null,
                 'user_type' => 'admin',
                 'is_admin' => true,
@@ -44,24 +43,31 @@ class AdminUserSeeder extends Seeder
             ];
             
             // Only generate new userId if user doesn't exist
+           
             if (!$existingUser) {
+                $userData['email'] = $email;
                 $userData['userId'] = Str::random(6);
+                User::create($userData);
+                $this->command->info("✅ Created new admin: $email");
+            } else {
+                $existingUser->update($userData);
+                $this->command->info("🔄 Updated existing admin: $email");
             }
             
-            User::updateOrCreate(
-                ['email' => $email],
-                [
-                    'name' => $this->generateAdminName($email),
-                    'email' => $email,
-                    'email_verified_at' => now(),
-                    'password' => Hash::make('admin123'), 
-                    'phone_number' => null,
-                    'user_type' => 'admin',
-                    'is_admin' => 1,
-                    'userId' => Str::random(6),
-                    'remember_token' => Str::random(10),
-                ]
-            );
+            // User::updateOrCreate(
+            //     ['email' => $email],
+            //     [
+            //         'name' => $this->generateAdminName($email),
+            //         'email' => $email,
+            //         'email_verified_at' => now(),
+            //         'password' => Hash::make('admin123'), 
+            //         'phone_number' => null,
+            //         'user_type' => 'admin',
+            //         'is_admin' => 1,
+            //         'userId' => Str::random(6),
+            //         'remember_token' => Str::random(10),
+            //     ]
+            // );
         }
 
         $this->command->info('Admin users seeded successfully!');
