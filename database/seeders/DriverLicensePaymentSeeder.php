@@ -19,7 +19,7 @@ class DriverLicensePaymentSeeder extends Seeder
             [
                 'type' => 'renew',
                 'name' => "Driver's License Renewal",
-                'amount' => 150,
+                'amount' => 400,
                 'revenue_head_code' => 'REV68dff2878cb81',
             ],
             [
