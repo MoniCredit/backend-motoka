@@ -332,7 +332,7 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z\s\'-]+$/'], // Allows letters, spaces, hyphens, and apostrophes
+            'name' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z0-9\s\'-]+$/'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', 'regex:/^[^<>]*$/'], // Disallow < and > for XSS
             'phone_number' => ['nullable', 'string', 'unique:users,phone_number', 'regex:/^[0-9\-\(\)\s\+]+$/'], // Allows digits, hyphens, parentheses, spaces, plus sign
             'password' => ['required', 'string', 'min:8', 'confirmed'],
@@ -342,7 +342,7 @@ class AuthController extends Controller
             'name.required' => 'The name field is required.',
             'name.string' => 'The name must be a string.',
             'name.max' => 'The name may not be greater than 255 characters.',
-            'name.regex' => 'The name can only contain letters, spaces, hyphens, and apostrophes.',
+            'name.regex' => 'The name can only contain letters, numbers, spaces, hyphens, and apostrophes.',
             
             'email.required' => 'The email field is required.',
             'email.string' => 'The email must be a string.',
