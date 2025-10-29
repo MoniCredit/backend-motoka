@@ -39,8 +39,10 @@ class DriverLicenseController extends Controller
                 'next_of_kin' => 'required|string',
                 'next_of_kin_phone' => 'required|string',
                 'mother_maiden_name' => 'required|string',
-                'license_year' => 'required|integer',
+                'license_year' => 'required|integer|in:3,5',
                 'passport_photograph' => 'required|image|mimes:jpeg,png,jpg|max:10240',
+            ], [
+                'license_year.in' => 'License year must be either 3 years or 5 years only.',
             ]);
         } elseif ($type === 'renew') {
             $rules = array_merge($baseRules, [
@@ -160,32 +162,54 @@ class DriverLicenseController extends Controller
     // Initialize payment for a specific driver license (Monicredit integration)
     public function initializePaymentForLicense(Request $request, $slug)
     {
+       
+
         $license = \App\Models\DriverLicense::where('slug', $slug)->first();
         if (!$license || $license->user_id !== Auth::user()->userId) {
             return response()->json(['status' => 'error', 'message' => 'License not found'], 404);
         }
-        $option = DriverLicensePayment::where('type', $license->license_type)->first();
-        if (!$option) {
-            return response()->json(['status' => 'error', 'message' => 'Invalid license type for payment'], 400);
-        }
 
-        // Calculate payment amount based on license type
-        $baseAmount = $option->amount;
-        $totalAmount = $baseAmount;
+        // Get payment option based on license type and year
+        $option = null;
+        $totalAmount = 0;
         $licenseYear = null;
 
-        // Only 'new' licenses use license_year multiplier
         if ($license->license_type === 'new') {
             $licenseYear = $license->license_year;
-            if (!$licenseYear || $licenseYear < 1 || $licenseYear > 10) {
+            
+            // Validate license year
+            if (!in_array($licenseYear, [3, 5])) {
                 return response()->json([
                     'status' => 'error', 
-                    'message' => 'Invalid license year. Must be between 1 and 10 years.'
+                    'message' => 'Invalid license year. Must be either 3 years or 5 years only.'
                 ], 400);
             }
-            $totalAmount = $baseAmount * $licenseYear;
+
+            // Get the specific payment option for new license with the selected year
+            $optionType = 'new_' . $licenseYear . '_years';
+            $option = DriverLicensePayment::where('type', $optionType)->first();
+            
+            if (!$option) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Payment option not found for ' . $licenseYear . ' years license.'
+                ], 400);
+            }
+            
+            $totalAmount = $option->amount;
+        } else {
+            // For renew and lost_damaged, use the existing logic
+            $option = DriverLicensePayment::where('type', $license->license_type)->first();
+            
+            if (!$option) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid license type for payment'
+                ], 400);
+            }
+            
+            $totalAmount = $option->amount;
         }
-        // For 'renew' and 'lost_damaged', use the fixed seeded amount
 
         // Security: Ensure license is not already paid for
         if ($license->status === 'active') {
@@ -212,15 +236,14 @@ class DriverLicenseController extends Controller
         
         // Use the full driver license record as meta_data
         $metaData = $license->toArray();
-        $metaData['base_amount'] = $baseAmount;
-        $metaData['license_year'] = $licenseYear;
+        $metaData['payment_option'] = $option->toArray();
         $metaData['total_amount'] = $totalAmount;
-        
-        // Build item description based on license type
-        $itemDescription = $option->name;
-        if ($license->license_type === 'new' && $licenseYear) {
-            $itemDescription .= " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")";
+        if ($licenseYear) {
+            $metaData['license_year'] = $licenseYear;
         }
+        
+        // Build item description
+        $itemDescription = $option->name;
         
         $items = [[
             'unit_cost' => $totalAmount,
@@ -297,9 +320,9 @@ class DriverLicenseController extends Controller
                 'license_type' => $license->license_type,
                 'payment_type' => 'driver_license',
                 'revenue_head_code' => $option->revenue_head_code,
-                'base_amount' => $baseAmount,
-                'license_year' => $licenseYear,
                 'total_amount' => $totalAmount,
+                'license_year' => $licenseYear,
+                'payment_option_type' => $option->type,
             ],
         ]);
         
@@ -331,32 +354,47 @@ class DriverLicenseController extends Controller
             ], 404);
         }
 
-        // Get payment option for license type
-        $option = DriverLicensePayment::where('type', $license->license_type)->first();
-        if (!$option) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Invalid license type for payment'
-            ], 400);
-        }
-
-        // Calculate payment amount based on license type
-        $baseAmount = $option->amount;
-        $totalAmount = $baseAmount;
+        // Get payment option based on license type and year
+        $option = null;
+        $totalAmount = 0;
         $licenseYear = null;
 
-        // Only 'new' licenses use license_year multiplier
         if ($license->license_type === 'new') {
             $licenseYear = $license->license_year;
-            if (!$licenseYear || $licenseYear < 1 || $licenseYear > 10) {
+            
+            // Validate license year
+            if (!in_array($licenseYear, [3, 5])) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Invalid license year. Must be between 1 and 10 years.'
+                    'message' => 'Invalid license year. Must be either 3 years or 5 years only.'
                 ], 400);
             }
-            $totalAmount = $baseAmount * $licenseYear;
+
+            // Get the specific payment option for new license with the selected year
+            $optionType = 'new_' . $licenseYear . '_years';
+            $option = DriverLicensePayment::where('type', $optionType)->first();
+            
+            if (!$option) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment option not found for ' . $licenseYear . ' years license.'
+                ], 400);
+            }
+            
+            $totalAmount = $option->amount;
+        } else {
+            // For renew and lost_damaged
+            $option = DriverLicensePayment::where('type', $license->license_type)->first();
+            
+            if (!$option) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid license type for payment'
+                ], 400);
+            }
+            
+            $totalAmount = $option->amount;
         }
-        // For 'renew' and 'lost_damaged', use the fixed seeded amount
 
         // Security: Ensure license is not already paid for
         if ($license->status === 'active') {
@@ -366,7 +404,7 @@ class DriverLicenseController extends Controller
             ], 400);
         }
 
-        // Security: Check for existing completed payments for this license
+        // Security: Check for existing completed payments
         $existingCompletedPayment = \App\Models\Payment::where('meta_data->driver_license_id', $license->id)
             ->where('status', 'completed')
             ->first();
@@ -390,13 +428,10 @@ class DriverLicenseController extends Controller
             ], 500);
         }
 
-        // Build item description based on license type
+        // Build item description
         $itemDescription = $option->name;
-        if ($license->license_type === 'new' && $licenseYear) {
-            $itemDescription .= " ({$licenseYear} year" . ($licenseYear > 1 ? 's' : '') . ")";
-        }
 
-        // Create unified Payment record for driver license
+        // Create unified Payment record
         $payment = \App\Models\Payment::create([
             'transaction_id' => $transaction_id,
             'amount' => $totalAmount,
@@ -413,13 +448,13 @@ class DriverLicenseController extends Controller
                 'payment_type' => 'driver_license',
                 'revenue_head_code' => $option->revenue_head_code,
                 'license_data' => $license->toArray(),
-                'base_amount' => $baseAmount,
-                'license_year' => $licenseYear,
                 'total_amount' => $totalAmount,
+                'license_year' => $licenseYear,
+                'payment_option_type' => $option->type,
             ],
         ]);
 
-        // Also create DriverLicenseTransaction for backward compatibility
+        // Also create DriverLicenseTransaction
         $txn = DriverLicenseTransaction::create([
             'transaction_id' => $transaction_id,
             'amount' => $totalAmount,
@@ -428,9 +463,8 @@ class DriverLicenseController extends Controller
             'payment_description' => $itemDescription,
             'user_id' => $user->id,
             'meta_data' => json_encode(array_merge($license->toArray(), [
-                'base_amount' => $baseAmount,
-                'license_year' => $licenseYear,
                 'total_amount' => $totalAmount,
+                'license_year' => $licenseYear,
             ])),
         ]);
 
@@ -449,9 +483,9 @@ class DriverLicenseController extends Controller
                 'payment_type' => 'driver_license',
                 'revenue_head_code' => $option->revenue_head_code,
                 'payment_description' => $itemDescription,
-                'base_amount' => $baseAmount,
-                'license_year' => $licenseYear,
                 'total_amount' => $totalAmount,
+                'license_year' => $licenseYear,
+                'payment_option_type' => $option->type,
             ],
         ];
 
@@ -482,14 +516,14 @@ class DriverLicenseController extends Controller
                 ], 500);
             }
 
-            // Update payment record with Paystack response
+            // Update payment record
             $payment->update([
                 'raw_response' => $data,
                 'gateway_reference' => $data['data']['reference'] ?? null,
                 'gateway_authorization_url' => $data['data']['authorization_url'] ?? null,
             ]);
 
-            // Update DriverLicenseTransaction with Paystack response
+            // Update DriverLicenseTransaction
             $txn->update([
                 'reference_code' => $data['data']['reference'] ?? null,
                 'raw_response' => $data,
@@ -504,8 +538,6 @@ class DriverLicenseController extends Controller
                     'reference' => $data['data']['reference'],
                     'transaction_id' => $transaction_id,
                     'amount' => $totalAmount,
-                    'base_amount' => $baseAmount,
-                    'license_year' => $licenseYear,
                     'payment_gateway' => 'paystack',
                     'license' => [
                         'slug' => $license->slug,
