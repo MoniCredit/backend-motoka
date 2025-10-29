@@ -11,22 +11,32 @@ class DriverLicensePaymentSeeder extends Seeder
     {
         $options = [
             [
-                'type' => 'new',
-                'name' => "Driver's License (New)",
-                'amount' => 200,
-                'revenue_head_code' => 'REV68dff2878cb81', 
+                'type' => 'new_3_years',
+                'name' => "Driver's License (New - 3 Years)",
+                'amount' => 45000,
+                'revenue_head_code' => 'REV68dff2878cb81',
+                'license_year' => 3,
+            ],
+            [
+                'type' => 'new_5_years',
+                'name' => "Driver's License (New - 5 Years)",
+                'amount' => 50000,
+                'revenue_head_code' => 'REV68dff2878cb81',
+                'license_year' => 5,
             ],
             [
                 'type' => 'renew',
                 'name' => "Driver's License Renewal",
                 'amount' => 400,
                 'revenue_head_code' => 'REV68dff2878cb81',
+                'license_year' => null,
             ],
             [
                 'type' => 'lost_damaged',
                 'name' => "Driver's License Replacement",
                 'amount' => 250,
                 'revenue_head_code' => 'REV68dff2878cb81',
+                'license_year' => null,
             ],
         ];
         foreach ($options as $option) {
