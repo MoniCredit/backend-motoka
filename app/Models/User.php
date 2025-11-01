@@ -48,14 +48,55 @@ class User extends Authenticatable
         return $this->belongsTo(UserType::class, 'user_type_id');
     }
     public function driversLicense()
-{
-    return $this->hasOne(DriverLicense::class, 'user_id', 'userId');
+    {
+        return $this->hasOne(DriverLicense::class, 'user_id', 'userId');
 
-}
+    }
+    /**
+     * Multiple driver's licenses relationship (for admin panel)
+     */
+    public function driverLicenses()
+    {
+        return $this->hasMany(DriverLicense::class, 'user_id', 'userId');
+    }
 
 
-public function plate()
-{
-    return $this->hasOne(Plate::class, 'user_id', 'userId');
-}
+    public function plate()
+    {
+        return $this->hasOne(Plate::class, 'user_id', 'userId');
+    }
+
+    /**
+     * Multiple plates relationship
+     */
+    public function plates()
+    {
+        return $this->hasMany(Plate::class, 'user_id', 'userId');
+    }
+
+    /**
+     * Cars relationship
+     */
+    public function cars()
+    {
+        return $this->hasMany(Car::class, 'user_id', 'userId');
+    }
+
+    /**
+     * Orders relationship
+     */
+    public function orders()
+    {
+        return $this->hasMany(Order::class, 'user_id', 'userId');
+    }
+
+    /**
+     * Payments relationship
+     */
+    public function payments()
+    {
+        return $this->hasMany(Payment::class, 'user_id', 'userId');
+    }
+
+
 }
