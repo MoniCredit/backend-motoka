@@ -1741,4 +1741,331 @@ class AdminController extends Controller
             ], 500);
         }
     }
+
+
+    /**
+ * Get users with pagination and search
+ */
+    public function getUsers(Request $request)
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $search = $request->get('search', '');
+        $status = $request->get('status', 'all');
+
+        $query = User::where('is_admin', false)
+            ->withCount(['cars', 'orders', 'driverLicenses'])
+            ->orderBy('created_at', 'desc');
+
+        // Search filter
+        if (!empty($search)) {
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                ->orWhere('email', 'like', "%{$search}%")
+                ->orWhere('phone', 'like', "%{$search}%")
+                ->orWhere('userId', 'like', "%{$search}%");
+            });
+        }
+
+        // Status filter
+        if ($status !== 'all') {
+            if ($status === 'active') {
+                $query->whereNull('deleted_at')->where('is_suspended', false);
+            } elseif ($status === 'suspended') {
+                $query->where('is_suspended', true);
+            } elseif ($status === 'deleted') {
+                $query->onlyTrashed();
+            }
+        }
+
+        // Include soft deleted users if needed
+        if ($status === 'all' || $status === 'deleted') {
+            $query->withTrashed();
+        }
+
+        $users = $query->paginate($perPage);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Users retrieved successfully',
+            'data' => $users
+        ]);
+    }
+
+    /**
+     * Get single user details
+     */
+    public function getUser($userId)
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $user = User::withTrashed()
+            ->where('userId', $userId)
+            ->with([
+                'cars' => function($query) {
+                    $query->latest()->limit(5);
+                },
+                'orders' => function($query) {
+                    $query->latest()->limit(5);
+                },
+                'driverLicenses' => function($query) {
+                    $query->latest()->limit(5);
+                }
+            ])
+            ->withCount(['cars', 'orders', 'driverLicenses'])
+            ->first();
+
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        // Get user statistics
+        $stats = [
+            'total_spent' => Payment::where('user_id', $user->userId)
+                ->whereIn('status', ['approved', 'completed'])
+                ->sum('amount'),
+            'pending_orders' => Order::where('user_id', $user->userId)
+                ->where('status', 'pending')
+                ->count(),
+            'completed_orders' => Order::where('user_id', $user->userId)
+                ->where('status', 'completed')
+                ->count(),
+            'last_activity' => $user->updated_at,
+        ];
+
+        return response()->json([
+            'status' => true,
+            'message' => 'User retrieved successfully',
+            'data' => [
+                'user' => $user,
+                'stats' => $stats
+            ]
+        ]);
+    }
+
+    /**
+     * Delete user (soft delete)
+     */
+    public function deleteUser($userId)
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $user = User::where('userId', $userId)->first();
+
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        // Prevent deleting admin users
+        if ($user->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Cannot delete admin users'
+            ], 403);
+        }
+
+        try {
+            // Soft delete the user
+            $user->delete();
+
+            Log::info('User deleted by admin', [
+                'admin_id' => $admin->userId,
+                'deleted_user_id' => $userId,
+                'deleted_user_email' => $user->email
+            ]);
+
+            // Send notification to user
+            try {
+                Mail::send('emails.account-deleted', ['user' => $user], function ($message) use ($user) {
+                    $message->to($user->email)
+                        ->subject('Account Deleted - Motoka');
+                });
+            } catch (\Exception $e) {
+                Log::error('Failed to send account deletion email', [
+                    'user_id' => $userId,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            return response()->json([
+                'status' => true,
+                'message' => 'User deleted successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('User deletion failed', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to delete user'
+            ], 500);
+        }
+    }
+
+    /**
+     * Suspend user account
+     */
+    public function suspendUser($userId)
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $user = User::where('userId', $userId)->first();
+
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        // Prevent suspending admin users
+        if ($user->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Cannot suspend admin users'
+            ], 403);
+        }
+
+        try {
+            $user->is_suspended = true;
+            $user->save();
+
+            Log::info('User suspended by admin', [
+                'admin_id' => $admin->userId,
+                'suspended_user_id' => $userId
+            ]);
+
+            // Send notification to user
+            try {
+                Mail::send('emails.account-suspended', ['user' => $user], function ($message) use ($user) {
+                    $message->to($user->email)
+                        ->subject('Account Suspended - Motoka');
+                });
+            } catch (\Exception $e) {
+                Log::error('Failed to send suspension email', [
+                    'user_id' => $userId,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            return response()->json([
+                'status' => true,
+                'message' => 'User suspended successfully',
+                'data' => $user
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('User suspension failed', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to suspend user'
+            ], 500);
+        }
+    }
+
+    /**
+     * Activate suspended user account
+     */
+    public function activateUser($userId)
+    {
+        $admin = Auth::user();
+
+        if (!$admin->is_admin) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $user = User::where('userId', $userId)->first();
+
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        try {
+            $user->is_suspended = false;
+            $user->save();
+
+            Log::info('User activated by admin', [
+                'admin_id' => $admin->userId,
+                'activated_user_id' => $userId
+            ]);
+
+            // Send notification to user
+            try {
+                Mail::send('emails.account-activated', ['user' => $user], function ($message) use ($user) {
+                    $message->to($user->email)
+                        ->subject('Account Activated - Motoka');
+                });
+            } catch (\Exception $e) {
+                Log::error('Failed to send activation email', [
+                    'user_id' => $userId,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            return response()->json([
+                'status' => true,
+                'message' => 'User activated successfully',
+                'data' => $user
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('User activation failed', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to activate user'
+            ], 500);
+        }
+    }
 }

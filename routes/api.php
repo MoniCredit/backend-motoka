@@ -367,5 +367,13 @@ Route::middleware(['cors', 'auth:sanctum', 'admin'])->prefix('admin')->group(fun
     Route::get('/transactions', [AdminController::class, 'getAllTransactions']);
     Route::get('/transactions/failed', [AdminController::class, 'getFailedTransactions']);
     Route::get('/transactions/debug', [AdminController::class, 'debugTransactions']);
+
+
+    // Users Management
+    Route::get('/users', [AdminController::class, 'getUsers']);
+    Route::get('/users/{userId}', [AdminController::class, 'getUser']);
+    Route::delete('/users/{userId}', [AdminController::class, 'deleteUser']);
+    Route::put('/users/{userId}/suspend', [AdminController::class, 'suspendUser']);
+    Route::put('/users/{userId}/activate', [AdminController::class, 'activateUser']);
 });
 
