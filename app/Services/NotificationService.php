@@ -87,7 +87,7 @@ class NotificationService
     public static function notifyDriverLicenseOperation($userId, $action, $license, $additionalInfo = null)
     {
         $messages = [
-            'created' => "Your driver license application has been submitted successfully.",
+            'created' => "Driver’s license created successfully. Proceed with payment to continue.",
             'updated' => "Your driver license information has been updated.",
             'deleted' => "Your driver license has been removed from your account.",
             'approved' => "Congratulations! Your driver license has been approved and is ready for collection.",
