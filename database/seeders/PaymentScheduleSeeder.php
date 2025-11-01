@@ -32,7 +32,7 @@ class PaymentScheduleSeeder extends Seeder
                 'payment_head_id' => 3, // Proof Of Ownership
                 'gateway_id' => 1,
                 'revenue_head_id' => 1,
-                'amount' => 130000,
+                'amount' => 1500,
             ],
             [
                 'id' => 4,
