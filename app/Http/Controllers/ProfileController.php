@@ -35,15 +35,11 @@ class ProfileController extends Controller
                     'social_avatar' => $user->social_avatar,
                     'address' => $user->address,
                     'gender' => $user->gender,
-                    'email_verification_code' => $user->email_verification_code,
-                    'email_verification_code_expires_at' => $user->email_verification_code_expires_at,
-                    'phone_verification_code' => $user->phone_verification_code,
-                    'phone_verification_code_expires_at' => $user->phone_verification_code_expires_at,
                     'phone_verified_at' => $user->phone_verified_at,
                     'created_at' => $user->created_at,
                     'updated_at' => $user->updated_at,
-                    'deleted_at' => $user->deleted_at,
                     'user_type' => $user->userType ? $user->userType->user_type_name : null,
+                    'has_pending_email_change' => !is_null($user->pending_email),
                     'pending_email' => $user->pending_email ?? null 
                 ]
             ]);
@@ -149,15 +145,11 @@ class ProfileController extends Controller
                 'social_avatar' => $user->social_avatar,
                 'address' => $user->address,
                 'gender' => $user->gender,
-                'email_verification_code' => $user->email_verification_code,
-                'email_verification_code_expires_at' => $user->email_verification_code_expires_at,
-                'phone_verification_code' => $user->phone_verification_code,
-                'phone_verification_code_expires_at' => $user->phone_verification_code_expires_at,
                 'phone_verified_at' => $user->phone_verified_at,
                 'created_at' => $user->created_at,
                 'updated_at' => $user->updated_at,
-                'deleted_at' => $user->deleted_at,
                 'user_type' => $user->userType ? $user->userType->user_type_name : null,
+                'has_pending_email_change' => !is_null($user->pending_email),
                 'pending_email' => $user->pending_email ?? null
             ]
         ]);
@@ -174,6 +166,20 @@ class ProfileController extends Controller
             'code' => 'required|string|size:6',
         ]);
 
+        // Rate limiting: Max 5 attempts per 15 minutes
+        $key = 'email_verify_attempts:' . $user->id;
+        $attempts = \Cache::get($key, 0);
+        
+        if ($attempts >= 5) {
+            $remainingTime = \Cache::get($key . ':expires_at');
+            $minutesLeft = $remainingTime ? Carbon::parse($remainingTime)->diffInMinutes(Carbon::now()) : 15;
+            
+            return response()->json([
+                'success' => false,
+                'message' => "Too many verification attempts. Please try again in {$minutesLeft} minutes."
+            ], 429);
+        }
+
         // Check if there's a pending email change
         if (!$user->pending_email) {
             return response()->json([
@@ -184,9 +190,16 @@ class ProfileController extends Controller
 
         // Check if verification code matches
         if ($user->email_verification_code !== $request->code) {
+            // Increment failed attempts
+            \Cache::put($key, $attempts + 1, Carbon::now()->addMinutes(15));
+            \Cache::put($key . ':expires_at', Carbon::now()->addMinutes(15)->toDateTimeString(), Carbon::now()->addMinutes(15));
+            
+            $remainingAttempts = 5 - ($attempts + 1);
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid verification code.'
+                'message' => 'Invalid verification code.',
+                'remaining_attempts' => max(0, $remainingAttempts)
             ], 400);
         }
 
@@ -198,13 +211,17 @@ class ProfileController extends Controller
             ], 400);
         }
 
-        // Update email and clear pending data
+        // Success - Update email and clear pending data
         $user->email = $user->pending_email;
         $user->pending_email = null;
         $user->email_verification_code = null;
         $user->email_verification_code_expires_at = null;
         $user->email_verified_at = Carbon::now(); 
         $user->save();
+
+        // Clear rate limit cache on success
+        \Cache::forget($key);
+        \Cache::forget($key . ':expires_at');
 
         return response()->json([
             'success' => true,
@@ -230,6 +247,24 @@ class ProfileController extends Controller
             ], 400);
         }
 
+        // Rate limiting: Max 3 resends per 30 minutes
+        $key = 'email_resend_attempts:' . $user->id;
+        $attempts = \Cache::get($key, 0);
+        
+        if ($attempts >= 3) {
+            $remainingTime = \Cache::get($key . ':expires_at');
+            $minutesLeft = $remainingTime ? Carbon::parse($remainingTime)->diffInMinutes(Carbon::now()) : 30;
+            
+            return response()->json([
+                'success' => false,
+                'message' => "Too many resend attempts. Please try again in {$minutesLeft} minutes."
+            ], 429);
+        }
+
+        // Increment resend attempts
+        \Cache::put($key, $attempts + 1, Carbon::now()->addMinutes(30));
+        \Cache::put($key . ':expires_at', Carbon::now()->addMinutes(30)->toDateTimeString(), Carbon::now()->addMinutes(30));
+
         // Generate new verification code
         $verificationCode = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         
@@ -250,7 +285,8 @@ class ProfileController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Verification code resent successfully.'
+                'message' => 'Verification code resent successfully.',
+                'remaining_resends' => max(0, 3 - ($attempts + 1))
             ]);
         } catch (\Exception $e) {
             Log::error('Resend email verification failed: ' . $e->getMessage());
