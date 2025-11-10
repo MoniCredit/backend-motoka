@@ -68,6 +68,12 @@ Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOTP']);
             Route::put('/change-password', [ProfileController::class, 'changePassword']);
             Route::delete('/delete-account', [ProfileController::class, 'deleteAccount']);
             Route::post('/kyc', [ProfileController::class, 'storeKyc']); // KYC endpoint
+
+
+             // NEW: Email change verification routes
+            Route::post('/verify-email-change', [ProfileController::class, 'verifyEmailChange']);
+            Route::post('/resend-email-change-verification', [ProfileController::class, 'resendEmailChangeVerification']);
+            Route::post('/cancel-email-change', [ProfileController::class, 'cancelEmailChange']);
         });
 
 
