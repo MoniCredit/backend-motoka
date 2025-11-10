@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class ProfileController extends Controller
 
@@ -41,7 +43,8 @@ class ProfileController extends Controller
                     'created_at' => $user->created_at,
                     'updated_at' => $user->updated_at,
                     'deleted_at' => $user->deleted_at,
-                    'user_type' => $user->userType ? $user->userType->user_type_name : null
+                    'user_type' => $user->userType ? $user->userType->user_type_name : null,
+                    'pending_email' => $user->pending_email ?? null 
                 ]
             ]);
         }
@@ -68,11 +71,49 @@ class ProfileController extends Controller
             'image' => 'sometimes|nullable|image|mimes:jpeg,png,jpg,gif|max:10240',
         ]);
 
-        $data = $request->only(['name', 'email', 'address']);
+        $data = $request->only(['name', 'address']);
         
         
         if ($request->has('gender')) {
             $data['gender'] = strtolower($request->gender);
+        }
+
+
+        // Handle email change - require verification
+        if ($request->has('email') && $request->email !== $user->email) {
+            // Generate verification code
+            $verificationCode = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            
+            // Store the pending email and verification code
+            $user->pending_email = $request->email;
+            $user->email_verification_code = $verificationCode;
+            $user->email_verification_code_expires_at = Carbon::now()->addMinutes(10);
+            $user->save();
+
+            // Send verification email to NEW email address
+            try {
+                Mail::send('emails.email-change-verification', [
+                    'user' => $user,
+                    'code' => $verificationCode,
+                    'newEmail' => $request->email
+                ], function ($message) use ($request) {
+                    $message->to($request->email)
+                        ->subject('Verify Your New Email Address - Motoka');
+                });
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Verification code sent to new email address. Please verify to complete the email change.',
+                    'requires_verification' => true,
+                    'pending_email' => $request->email
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Email change verification failed: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to send verification email. Please try again.'
+                ], 500);
+            }
         }
 
         if ($request->hasFile('image')) {
@@ -116,10 +157,129 @@ class ProfileController extends Controller
                 'created_at' => $user->created_at,
                 'updated_at' => $user->updated_at,
                 'deleted_at' => $user->deleted_at,
-                'user_type' => $user->userType ? $user->userType->user_type_name : null
+                'user_type' => $user->userType ? $user->userType->user_type_name : null,
+                'pending_email' => $user->pending_email ?? null
             ]
         ]);
     }
+
+    /**
+     * Verify the new email change with OTP
+     */
+    public function verifyEmailChange(Request $request)
+    {
+        $user = Auth::user();
+
+        $request->validate([
+            'code' => 'required|string|size:6',
+        ]);
+
+        // Check if there's a pending email change
+        if (!$user->pending_email) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No pending email change found.'
+            ], 400);
+        }
+
+        // Check if verification code matches
+        if ($user->email_verification_code !== $request->code) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid verification code.'
+            ], 400);
+        }
+
+        // Check if code has expired
+        if (Carbon::now()->greaterThan($user->email_verification_code_expires_at)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Verification code has expired. Please request a new one.'
+            ], 400);
+        }
+
+        // Update email and clear pending data
+        $user->email = $user->pending_email;
+        $user->pending_email = null;
+        $user->email_verification_code = null;
+        $user->email_verification_code_expires_at = null;
+        $user->email_verified_at = Carbon::now(); 
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Email updated successfully!',
+            'data' => [
+                'email' => $user->email
+            ]
+        ]);
+    }
+
+
+    /**
+     * Resend email change verification code
+     */
+    public function resendEmailChangeVerification(Request $request)
+    {
+        $user = Auth::user();
+
+        if (!$user->pending_email) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No pending email change found.'
+            ], 400);
+        }
+
+        // Generate new verification code
+        $verificationCode = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        
+        $user->email_verification_code = $verificationCode;
+        $user->email_verification_code_expires_at = Carbon::now()->addMinutes(10);
+        $user->save();
+
+        // Send verification email
+        try {
+            Mail::send('emails.email-change-verification', [
+                'user' => $user,
+                'code' => $verificationCode,
+                'newEmail' => $user->pending_email
+            ], function ($message) use ($user) {
+                $message->to($user->pending_email)
+                    ->subject('Verify Your New Email Address - Motoka');
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Verification code resent successfully.'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Resend email verification failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to resend verification email.'
+            ], 500);
+        }
+    }
+
+      /**
+     * Cancel pending email change
+     */
+    public function cancelEmailChange(Request $request)
+    {
+        $user = Auth::user();
+
+        $user->pending_email = null;
+        $user->email_verification_code = null;
+        $user->email_verification_code_expires_at = null;
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Email change cancelled successfully.'
+        ]);
+    }
+
+
 
     public function changePassword(Request $request)
     {
